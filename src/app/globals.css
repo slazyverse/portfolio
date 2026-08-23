@@ -1,0 +1,579 @@
+@import "tailwindcss";
+
+/* ============================================================
+   THE LAYER UNDERNEATH — design tokens
+   Dark-first. Light mode is a re-grounding, not an inversion.
+   ============================================================ */
+
+@theme {
+  /* Substrate ramp — deeper = further down the stack */
+  --color-l0: #05070a;
+  --color-l1: #090d13;
+  --color-l2: #0f151e;
+  --color-l3: #161e2a;
+  --color-l4: #222d3d;
+
+  /* Hairlines */
+  --color-rule-faint: rgba(232, 237, 244, 0.06);
+  --color-rule: rgba(232, 237, 244, 0.11);
+  --color-rule-strong: rgba(232, 237, 244, 0.2);
+
+  /* Ink — every step verified ≥4.5:1 (AA) against both --l1 and --l2.
+     ink-low is metadata, but metadata is still text, so it clears AA too. */
+  --color-ink-hi: #e9eef6; /* 16.7:1 */
+  --color-ink: #c3ccd9; /* 12.0:1 */
+  --color-ink-mid: #98a5b7; /*  7.8:1 */
+  --color-ink-low: #788495; /*  5.1:1 */
+
+  /* Signal — the single accent */
+  --color-signal: #ff9e2c;
+  --color-signal-dim: #b86c14;
+  --color-signal-wash: rgba(255, 158, 44, 0.1);
+
+  /* Semantic — only where the system has a real state */
+  --color-safe: #3ddc91;
+  --color-unsafe: #ff5a5a;
+  --color-waiting: #6fa8ff;
+
+  /* Type */
+  --font-sans: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-precise: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root {
+  /* Semantic surface aliases — components read these, never raw ramp values,
+     so the light theme below can re-ground everything in one place. */
+  --ground: var(--color-l1);
+  --panel: var(--color-l2);
+  --raised: var(--color-l3);
+  --edge: var(--color-l4);
+
+  --hair-faint: var(--color-rule-faint);
+  --hair: var(--color-rule);
+  --hair-strong: var(--color-rule-strong);
+
+  --fg-hi: var(--color-ink-hi);
+  --fg: var(--color-ink);
+  --fg-mid: var(--color-ink-mid);
+  --fg-low: var(--color-ink-low);
+
+  --accent: var(--color-signal);
+  --accent-dim: var(--color-signal-dim);
+  --accent-wash: var(--color-signal-wash);
+
+  --state-safe: var(--color-safe);
+  --state-unsafe: var(--color-unsafe);
+  --state-waiting: var(--color-waiting);
+
+  /* The ground for strata 01–03. The page steps through these as the reader
+     descends. Every ink colour is contrast-checked against the deepest one,
+     not just against the top of the page. */
+  --depth-1: #070a10;
+  --depth-2: #05080d;
+  --depth-3: #04060a;
+
+  --rail-w: 72px;
+  color-scheme: dark;
+}
+
+/* Light mode — engineering paper. Warm-white ground, ink-blue text,
+   amber darkened to hold contrast. Not an inversion. */
+:root[data-theme="light"] {
+  --ground: #f7f6f3;
+  --panel: #ffffff;
+  --raised: #f1efea;
+  --edge: #e2ded5;
+
+  --hair-faint: rgba(12, 17, 25, 0.07);
+  --hair: rgba(12, 17, 25, 0.13);
+  --hair-strong: rgba(12, 17, 25, 0.24);
+
+  --fg-hi: #0c1119; /* 17.5:1 */
+  --fg: #2c3542; /* 11.5:1 */
+  --fg-mid: #4e5866; /*  6.7:1 top · 5.8:1 deepest */
+  --fg-low: #5f6875; /*  5.2:1 top · 4.8:1 deepest */
+
+  /* Amber darkened until it clears AA as small text, not just as a large-text
+     accent — it carries links and section indices, which are small. */
+  --accent: #9e4f00; /*  5.4:1 top · 5.0:1 deepest */
+  --accent-dim: #7d3e00;
+  --accent-wash: rgba(158, 79, 0, 0.09);
+
+  --state-safe: #0f7553; /*  5.3:1 */
+  --state-unsafe: #b02318; /*  6.3:1 */
+  --state-waiting: #1f51bc; /*  6.6:1 */
+
+  /* Light mode descends too, but far less: here going deeper costs contrast
+     instead of adding it, so the steps are gentle and the inks above are
+     verified against --depth-3. */
+  --depth-1: #f4f2ee;
+  --depth-2: #f1efe9;
+  --depth-3: #eeece5;
+
+  color-scheme: light;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: clamp(1rem, 1.1vw, 1.0625rem);
+  line-height: 1.65;
+  font-variation-settings: "wdth" 100;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--color-l0);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Headings never skip and never wrap badly */
+h1,
+h2,
+h3,
+h4 {
+  color: var(--fg-hi);
+  text-wrap: balance;
+  font-variation-settings: "wdth" 100;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+/* Digits must not jitter while numbers animate or tables align */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Type scale — fluid, clamp-based
+   ============================================================ */
+
+.t-display {
+  font-size: clamp(3rem, 7.5vw, 6.5rem);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 0.92;
+}
+
+.t-h1 {
+  font-size: clamp(2.5rem, 6vw, 5rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.t-h2 {
+  font-size: clamp(1.75rem, 3.2vw, 2.75rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+}
+
+.t-h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.t-lead {
+  font-size: clamp(1.125rem, 1.5vw, 1.375rem);
+  line-height: 1.55;
+  max-width: 60ch;
+}
+
+.t-body {
+  font-size: clamp(1rem, 1.1vw, 1.0625rem);
+  line-height: 1.65;
+  max-width: 68ch;
+}
+
+.t-small {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+/* Mono means machine-verifiable. Never used for prose. */
+.t-mono {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.t-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Archivo's width axis — stratum labels compress into signage */
+.t-cond {
+  font-variation-settings: "wdth" 78;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   Utilities
+   ============================================================ */
+
+.hairline {
+  border-color: var(--hair);
+}
+
+/* Skip link — first in tab order, invisible until focused */
+/* Offset vertically rather than to -9999px: a far-left absolute element can
+   extend the scrollable area in some engines. */
+.skip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform: translateY(-200%);
+  z-index: 100;
+  padding: 0.75rem 1.25rem;
+  background: var(--accent);
+  color: var(--color-l0);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.skip:focus {
+  transform: translateY(0);
+}
+
+/* ============================================================
+   The descent
+   ============================================================ */
+
+/* The ground deepens in four steps rather than a continuously-fading
+   full-viewport layer. A fixed overlay whose opacity changes every frame forces
+   a fullscreen composite 60 times a second; on integrated graphics that is the
+   single most expensive thing this page could do, for an effect the reader
+   perceives as four gradual stages anyway. This is a background-color
+   transition that fires four times in total. */
+
+body {
+  transition: background-color 900ms var(--ease-precise);
+}
+
+:root[data-stratum="1"] body { background-color: var(--depth-1); }
+:root[data-stratum="2"] body { background-color: var(--depth-2); }
+:root[data-stratum="3"] body { background-color: var(--depth-3); }
+
+/* The rail fill reads scroll progress straight from the custom property, so it
+   never costs a React render. */
+.rail-fill {
+  top: 0;
+  height: calc(var(--depth, 0) * 100%);
+}
+
+/* The descent frame.
+   No `perspective` or `preserve-3d`: the layers only scale and translate, never
+   rotate, so a 3D rendering context buys nothing visually while adding
+   compositing work. Measured at parity, so it goes.
+   `contain` stops the absolutely-positioned stack from invalidating layout
+   outside the frame. */
+.descent-frame {
+  contain: layout paint;
+}
+
+/* Each layer sits in one of three states and CSS moves between them. The whole
+   animation is one transition on transform and opacity — compositor-only, and
+   rasterised once per state rather than once per frame.
+
+   The scale range is narrow on purpose: 0.88 → 1 → 1.12. Scaling text forces
+   re-rasterisation, so range is not free, and a dolly reads from relative
+   change rather than absolute magnitude. */
+.descent-layer {
+  transition:
+    transform 720ms var(--ease-out-expo),
+    opacity 560ms var(--ease-out-expo),
+    filter 560ms var(--ease-out-expo);
+}
+
+.descent-layer[data-layer="ahead"] {
+  transform: translate3d(0, 30px, 0) scale(0.88);
+  opacity: 0;
+  pointer-events: none;
+  /* Ahead layers are never composited or hit-tested. */
+  visibility: hidden;
+}
+
+.descent-layer[data-layer="active"] {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+}
+
+.descent-layer[data-layer="passed"] {
+  transform: translate3d(0, -34px, 0) scale(1.12);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* With motion off the layers simply stack and read as a list. */
+.descent-layer[data-layer="static"] {
+  transform: none;
+  opacity: 1;
+  transition: none;
+}
+
+/* `visibility` is transitioned as a step so a layer stays paintable for the
+   duration of its fade, then stops being composited entirely. */
+.descent-layer[data-layer="ahead"],
+.descent-layer[data-layer="passed"] {
+  transition:
+    transform 720ms var(--ease-out-expo),
+    opacity 560ms var(--ease-out-expo),
+    visibility 0s linear 560ms;
+}
+
+/* ============================================================
+   Motion
+   Every rule here is additive: content is visible in the markup, and only
+   becomes hidden once JS sets [data-reveal-armed], which it never does under
+   reduced motion. No-JS and reduced-motion readers get the finished page.
+   ============================================================ */
+
+/* No `will-change` here: Reveal sets it just before the transition and clears
+   it on transitionend. Held permanently, 71 elements would pin 71 GPU layers
+   for the whole session. */
+[data-reveal][data-reveal-armed] {
+  opacity: 0;
+  transition:
+    opacity 520ms var(--ease-out-expo),
+    transform 520ms var(--ease-out-expo);
+}
+
+[data-reveal="up"][data-reveal-armed] {
+  transform: translate3d(0, 22px, 0) scale(0.985);
+}
+
+[data-reveal][data-revealed] {
+  opacity: 1;
+  transform: none;
+}
+
+/* A heavier entrance for full-width diagrams: they rise further and uncover
+   from the bottom edge, which reads as a panel sliding into its slot. */
+[data-reveal="panel"][data-reveal-armed] {
+  transform: translate3d(0, 28px, 0) scale(0.965);
+  clip-path: inset(0 0 10% 0);
+  transition:
+    opacity 620ms var(--ease-out-expo),
+    transform 620ms var(--ease-out-expo),
+    clip-path 620ms var(--ease-out-expo);
+}
+
+[data-reveal="panel"][data-revealed] {
+  clip-path: inset(0 0 0 0);
+}
+
+/* Code lines uncover in sequence, so the eye travels the excerpt in reading
+   order instead of arriving at a wall of syntax. */
+.code-line[data-reveal-armed] {
+  opacity: 0;
+  transform: translate3d(-6px, 0, 0);
+  transition:
+    opacity 420ms var(--ease-out-expo),
+    transform 420ms var(--ease-out-expo);
+}
+
+.code-line[data-revealed] {
+  opacity: 1;
+  transform: none;
+}
+
+/* Panels lift very slightly toward the reader on hover. 2px, not 8 — this is
+   an instrument panel, not a card in a marketing grid. */
+.lift {
+  transition:
+    transform 320ms var(--ease-out-expo),
+    border-color 320ms var(--ease-precise),
+    background-color 320ms var(--ease-precise);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover {
+    transform: translateY(-2px);
+    border-color: var(--hair-strong);
+  }
+}
+
+/* The stratum rule draws itself across as the marker enters. */
+.rule-draw {
+  transform-origin: left center;
+}
+
+.rule-draw[data-reveal-armed] {
+  transform: scaleX(0);
+  opacity: 1;
+  transition: transform 700ms var(--ease-out-expo);
+}
+
+.rule-draw[data-revealed] {
+  transform: scaleX(1);
+}
+
+/* Headline reveal — each line rises out of its own clipping box, so the type
+   appears to be uncovered rather than to fly in. */
+.line-mask {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.08em;
+  margin-bottom: -0.08em;
+}
+
+.line-mask > span {
+  display: block;
+}
+
+/* Armed only once JS confirms it can bring the line back. Without this gate a
+   no-JS reader would get a heading translated permanently out of its box. */
+.line-mask[data-line-armed] > span {
+  transform: translate3d(0, 105%, 0);
+  transition: transform 720ms var(--ease-out-expo);
+  transition-delay: var(--line-delay, 0ms);
+}
+
+.line-mask[data-line-armed][data-revealed] > span {
+  transform: none;
+}
+
+/* Sequence steps — used by the scrubbed diagrams. */
+.step {
+  transition:
+    opacity 380ms var(--ease-precise),
+    transform 380ms var(--ease-precise),
+    background-color 380ms var(--ease-precise),
+    border-color 380ms var(--ease-precise),
+    color 380ms var(--ease-precise);
+}
+
+/* The gate is the attribute, not the media query.
+   MotionProvider resolves the OS preference and any explicit override into
+   data-motion, so CSS and JS read the same single source of truth and cannot
+   disagree. The media query is the pre-hydration fallback only. */
+
+:root[data-motion="reduced"] {
+  scroll-behavior: auto;
+}
+
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}
+
+/* Transforms and parallax are what trigger vestibular symptoms; a colour or
+   opacity change is not. So hover feedback keeps its transition and only the
+   movement is removed — a page whose buttons stop responding reads as broken,
+   which helps nobody. */
+:root[data-motion="reduced"] .lift:hover {
+  transform: none;
+}
+
+/* Before hydration resolves data-motion, honour the OS directly. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion]) {
+    scroll-behavior: auto;
+  }
+
+  :root:not([data-motion]) *,
+  :root:not([data-motion]) *::before,
+  :root:not([data-motion]) *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ============================================================
+   Print
+   A portfolio gets printed and PDF'd. Give it a real paper form rather than
+   a dark rectangle: ink on white, links resolved, chrome removed.
+   ============================================================ */
+
+@media print {
+  nav[aria-label="Section navigation"],
+  header {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    transition: none !important;
+    color: #000 !important;
+  }
+
+  body > div {
+    margin-left: 0 !important;
+  }
+
+  /* Nothing may stay hidden behind an un-fired reveal on paper. */
+  [data-reveal],
+  .line-mask > span,
+  .code-line {
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+  }
+
+  /* A scrubbed sequence has no scroll on paper; collapse its track. */
+  [class*="vh]"] {
+    height: auto !important;
+  }
+
+  figure,
+  section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Resolve link targets, since a printed href is otherwise unusable. */
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.75em;
+    word-break: break-all;
+  }
+}
