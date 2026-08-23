@@ -23,31 +23,36 @@ interface, engine and substrate.
 | Language | TypeScript, `strict` + `noUncheckedIndexedAccess` |
 | Styling | Tailwind CSS v4, CSS-first tokens |
 | Fonts | Archivo + JetBrains Mono, self-hosted via `next/font` |
-| Motion | Hand-built. No motion library, native scrolling |
-| Visuals | Canvas 2D — no charting or 3D dependency |
+| 3D | three.js + React Three Fiber + drei — the descent sequence |
+| Motion | anime.js for orchestrated sequences; CSS for everything else |
+| Visuals | Canvas 2D for the live simulation and diagrams |
 
-Runtime dependencies: `next`, `react`, `react-dom`. Nothing else.
+Runtime dependencies: `next`, `react`, `react-dom`, `three`, `@react-three/fiber`,
+`@react-three/drei`, `animejs`.
 
-### Why there is no motion library
+**Scrolling is never intercepted.** There is no smooth-scroll library and no custom
+cursor — both were tried and removed after testing on the target hardware, because a
+scroller decoupled from the OS reads as lag no matter how well it is tuned.
 
-Phase 2 planned on GSAP + ScrollTrigger, Framer Motion and Lenis. All three were
-dropped, each for its own reason:
+### What each dependency is for, and what was rejected
 
-- **Framer Motion (44 KB gzipped)** — the site asks it for a fade, a translate and a
-  stagger. That is `Reveal.tsx`, about thirty lines of IntersectionObserver and a CSS
-  transition. Shipping 44 KB to avoid writing them would contradict the argument the
-  page itself makes.
-- **GSAP + ScrollTrigger (27 KB+ gzipped)** — its `pin` injects a spacer element and
-  rewrites layout. CSS `position: sticky` pins natively and correctly; what remains is
-  arithmetic on a bounding rect, which is `useScrubbedSteps.ts`.
-- **Lenis (5.3 KB gzipped)** — removed after testing on the target hardware. Smoothed
-  scroll decouples the page from the OS scroller; at any easing setting there is a lag
-  between the wheel stopping and the page settling, and on a low-power machine that
-  reads as the whole site being slow. Native scrolling is instant and costs nothing.
-
-**Scrolling is never intercepted.** The motion layer is entrance reveals, two
-scroll-scrubbed diagrams and one canvas simulation — nothing that stands between the
-reader and the scroller.
+- **three / R3F / drei — the descent.** Not decoration: drei's `Text` is
+  signed-distance-field text rendered on the GPU, so it scales without
+  re-rasterising glyphs. Glyph re-rasterisation is exactly what made the CSS
+  version of the zoom stutter, so WebGL removes that cost at its source. Loaded
+  lazily — three.js is never in the initial bundle, and never loads at all if
+  WebGL is missing or motion is off.
+- **anime.js — orchestrated sequences.** Tree-shaken to `animate` and `stagger`.
+  Used on discrete events (a layer arriving), never per frame.
+- **Framer Motion — rejected (44 KB).** The site asks it for a fade, a translate
+  and a stagger. That is `Reveal.tsx`, about thirty lines of IntersectionObserver
+  and a CSS transition.
+- **GSAP + ScrollTrigger — rejected (27 KB+).** Its `pin` injects a spacer and
+  rewrites layout. `position: sticky` pins natively; what remains is arithmetic
+  on a bounding rect.
+- **Lenis — removed (5.3 KB).** Smoothed scroll decouples the page from the OS
+  scroller; at any easing there is a gap between the wheel stopping and the page
+  settling, which on a low-power machine reads as the whole site being slow.
 
 ### Performance shape
 
@@ -85,18 +90,20 @@ npm run typecheck
 
 ```
 src/
-  app/          layout, page, globals.css, robots, sitemap, 404
+  app/          layout, page, globals.css, robots, sitemap, 404, error, og-image
   components/
     layout/     DepthRail · SiteNav · Footer · Section · StratumMarker
     primitives/ ClaimCard · SourceLink · CodeExcerpt · MetricGrid · StateBadge
     sections/   Entry · Position · CaseStudy · HowItsBuilt · Stack · Record · Contact
     visuals/    AllocationGraph · LockWindow · AttributionCrossSection
-                SafetySearch · RequestTrace   (scroll-scrubbed)
+                SafetySearch · RequestTrace          (scroll-scrubbed)
+                DescentStory · DescentScene          (WebGL, lazy)
     effects/    Reveal · TextReveal · CountUp
     providers/  MotionProvider
   data/         All content. Components render it; none of it is hard-coded in JSX.
-  hooks/        useScrubbedSteps
+  hooks/        useScrubbedSteps · useScrollCamera
   lib/          cn · motion · revealObserver
+public/fonts/   Archivo.ttf · JetBrainsMono.ttf   (the GPU text needs real files)
 ```
 
 ## Two conventions worth knowing
@@ -140,21 +147,25 @@ both sequences reporting their result.
 
 ## The descent
 
-`DepthRail` owns the page's single scroll listener and publishes two custom properties:
+Two mechanisms share the name, and they are separate:
 
-| Property | Meaning |
-|---|---|
-| `--depth` | 0 → 1 across the document |
-| `--scrolled` | 0 or 1, once the page has moved |
+**The page ground.** `DepthRail` owns the single scroll listener and publishes
+`--depth` (0 → 1) as a CSS custom property, plus a `data-stratum` attribute. The
+ground steps between four background colours as the reader descends — four CSS
+transitions across the whole page, not a full-viewport overlay recompositing every
+frame. Every ink colour is contrast-checked against the *deepest* ground, not just
+the top of the page.
 
-A fixed `.descent` sheet reads `--depth` and fades in `--depth-floor`, so the ground
-literally deepens as the reader descends. Opacity is compositor-only: the whole effect
-costs one property write per frame and never triggers layout.
+**The 3D sequence.** `DescentStory` maps scroll onto a camera depth and hands it to
+`DescentScene`, where four layers of one real request stand six units apart along Z.
+Scroll dollies the camera through them; the pointer orbits it. The renderer runs
+`frameloop="demand"`, so it is idle unless scroll or pointer requests a frame — which
+means every input that moves the camera has to call `invalidate()` explicitly.
 
-`--depth-amp` caps that fade per theme — **0.85 dark, 0.5 light**. Descending into dark
-*gains* contrast; descending into light loses it, so light mode gets half the amplitude
-and its `--fg-low` and `--accent` are tuned against the deepest ground rather than the
-top of the page.
+The fade between layers is deliberately asymmetric: 1.25 units of run-up as a layer
+approaches, 0.42 to clear out once passed. A layer you have just passed is enormous
+and directly in front of the camera, so it has to leave fast or it covers whatever is
+arriving behind it.
 
 ## Status
 
@@ -162,16 +173,19 @@ Phases 1–5 complete.
 
 | Measure | Value |
 |---|---|
-| Initial JS | 177.8 KB gzipped |
-| CSS | 7.6 KB gzipped |
+| Initial JS | 194.2 KB gzipped |
+| three.js chunk | 267 KB gzipped — lazy, loads only near the descent |
+| CSS | ~7.6 KB gzipped |
 | Fonts (preloaded) | 127.5 KB, 2 files |
 | Routes | 5, all static |
-| Runtime deps | 3 |
+| Deploy | Vercel, auto-deploys from `main` |
 
-**On the 180 KB budget:** now met, at 177.8 KB. It got there by removing things rather
-than by tuning them — the motion library, the custom cursor, the magnetic buttons and
-the compositing overlay were all cost without corresponding meaning. Roughly 140 KB of
-what remains is the React 19 + Next 16 baseline.
+**On the 180 KB budget:** the initial bundle sat at 177.8 KB after a round of removing
+things rather than tuning them — the motion library, the custom cursor, the magnetic
+buttons and the compositing overlay were all cost without corresponding meaning. Adding
+the 3D descent put it back to 194.2 KB. Roughly 140 KB of that is the React 19 + Next 16
+baseline. The 267 KB of three.js is deliberately *not* in it: it is fetched only when the
+descent section comes within a screen, and never on a device without WebGL.
 
 Code-splitting the two scrubbed sequences was tried and *increased* the total to
 184.1 KB, because Next preloads the dynamic chunks anyway and adds loader machinery;
