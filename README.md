@@ -4,8 +4,14 @@ An engineering portfolio built on one idea: **the layer underneath**. The site i
 cross-section rather than a page — it opens at the surface and descends through
 interface, engine and substrate.
 
+**Live:** [sagar-tailor-portfolio.vercel.app](https://sagar-tailor-portfolio.vercel.app)
+
 **Direction and rationale:** [`docs/phase-1-foundation.md`](docs/phase-1-foundation.md) ·
 [`docs/phase-2-design-system.md`](docs/phase-2-design-system.md)
+
+> Turn **Motion** on in the header to see the descent. It defaults to your
+> operating system's reduced-motion setting, which on many Windows machines is
+> off for performance reasons rather than accessibility ones.
 
 ---
 
