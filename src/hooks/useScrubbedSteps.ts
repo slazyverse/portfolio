@@ -25,16 +25,17 @@ import { clamp } from "@/lib/motion";
  */
 export function useScrubbedSteps(stepCount: number) {
   const trackRef = useRef<HTMLDivElement>(null);
-  const [step, setStep] = useState(0);
+  const [scrolledStep, setScrolledStep] = useState(0);
   const motion = useMotionAllowed();
   const reduced = !motion;
 
+  // Derived, not synced. With motion off the sequence renders its completed
+  // state, because the conclusion is the information — and deriving that means
+  // no effect has to write it, which is what made this a cascading render.
+  const step = motion ? scrolledStep : stepCount - 1;
+
   useEffect(() => {
-    if (!motion) {
-      // Show the completed sequence: the conclusion is the information.
-      setStep(stepCount - 1);
-      return;
-    }
+    if (!motion) return;
 
     const track = trackRef.current;
     if (!track) return;
@@ -54,7 +55,7 @@ export function useScrubbedSteps(stepCount: number) {
       // A short dwell at each end so the first and last steps are readable
       // rather than flashing past at the boundaries.
       const eased = clamp((progress - 0.06) / 0.88);
-      setStep(Math.min(stepCount - 1, Math.floor(eased * stepCount)));
+      setScrolledStep(Math.min(stepCount - 1, Math.floor(eased * stepCount)));
     };
 
     const onScroll = () => {

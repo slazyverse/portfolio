@@ -18,11 +18,16 @@ const KB = 1024;
 
 /** Budgets in KB (gzipped where the metric says so). */
 const BUDGET = {
-  // Target is 200 KB. The ceiling sits at 205 to absorb the mandatory
-  // next@16.3.5 security patch (+7.2 KB over the 195.0 KB pre-Phase-1
-  // baseline), which was not discretionary. Phase 11 must claw this back;
-  // do not raise this number to make a feature fit.
-  initialJs: 205,
+  // 200 KB is the architectural target and it is not negotiable.
+  //
+  // Phase 1's security patch pushed this to 202.3 and the ceiling was
+  // temporarily held at 205. Phase 2 paid that back by deleting anime.js —
+  // 21.5 KB gzipped to orchestrate one two-element stagger that the native Web
+  // Animations API does for free — bringing the entry to 189.4 KB.
+  //
+  // The rule is optimise first, then add. Raising this number to make a
+  // feature fit is the failure mode this gate exists to prevent.
+  initialJs: 200,
   lazyWebgl: 300,
   css: 16,
   fontsPreloaded: 130,

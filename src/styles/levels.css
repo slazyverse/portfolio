@@ -1,0 +1,89 @@
+/* ============================================================================
+   SUBSTRATE — TIER 3: LEVEL OVERRIDES
+   ============================================================================
+
+   The four levels are the site's information architecture, not a decoration:
+
+     00 SURFACE     what software looks like from outside
+     01 INTERFACE   where behaviour becomes visible
+     02 ENGINE      where the work is actually done
+     03 SUBSTRATE   bedrock; facts, no ornament
+
+   Descending does three things, and they are all token-driven so that any
+   component placed at a level inherits them without knowing where it is:
+
+     1. the ground deepens
+     2. the vertical rhythm tightens  — the page physically compresses
+     3. the hairlines firm up         — structure becomes more explicit
+
+   That last one is the point. At the surface the system is suggestive; at the
+   substrate it is exact. The metaphor does layout work rather than being
+   described in copy.
+
+   Applied two ways:
+     :root[data-level]  the page ground, set by scroll depth
+     [data-level]       a scoped region, set by a section or route
+   ========================================================================= */
+
+[data-level] {
+  /* Defaults, so a level scope is always complete even if a token is missed. */
+  --level-ground: var(--ground);
+  --level-rhythm: 8rem;
+  --level-hair: var(--hair-faint);
+  --level-index: "00";
+}
+
+[data-level="surface"] {
+  --level-ground: var(--color-l1);
+  --level-rhythm: 8rem;
+  --level-hair: var(--hair-faint);
+  --level-index: "00";
+}
+
+[data-level="interface"] {
+  --level-ground: #070a10;
+  --level-rhythm: 7.5rem;
+  --level-hair: var(--hair-faint);
+  --level-index: "01";
+}
+
+[data-level="engine"] {
+  --level-ground: #05080d;
+  --level-rhythm: 7rem;
+  --level-hair: var(--hair);
+  --level-index: "02";
+}
+
+[data-level="substrate"] {
+  --level-ground: #04060a;
+  --level-rhythm: 6rem;
+  --level-hair: var(--hair);
+  --level-index: "03";
+}
+
+/* --- The page ground -------------------------------------------------------
+   Four stepped background-color transitions across the whole document, not a
+   fixed full-viewport overlay whose opacity changes every frame. A fullscreen
+   composite at 60fps is the single most expensive thing this page could do on
+   integrated graphics, for an effect the reader perceives as four stages
+   anyway. Measured, then chosen. */
+
+body {
+  transition: background-color var(--dur-cinematic) var(--ease-precise);
+}
+
+:root[data-level="surface"] body { background-color: var(--color-l1); }
+:root[data-level="interface"] body { background-color: #070a10; }
+:root[data-level="engine"] body { background-color: #05080d; }
+:root[data-level="substrate"] body { background-color: #04060a; }
+
+/* Retained so the existing DepthRail keeps working until Phase 4 replaces it
+   with SystemChrome. Same four steps, previous attribute name. */
+:root[data-stratum="1"] body { background-color: #070a10; }
+:root[data-stratum="2"] body { background-color: #05080d; }
+:root[data-stratum="3"] body { background-color: #04060a; }
+
+/* A section that declares its level adopts that level's rhythm. */
+section[data-level] {
+  padding-block: var(--level-rhythm);
+}

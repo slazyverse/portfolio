@@ -264,19 +264,15 @@ export default function DescentScene({
   driver: React.RefObject<Driver>;
   onInvalidate?: (fn: () => void) => void;
 }) {
-  const [palette, setPalette] = useState<Palette | null>(null);
-
-  useEffect(() => {
-    setPalette(readPalette());
-    const observer = new MutationObserver(() => setPalette(readPalette()));
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-    return () => observer.disconnect();
-  }, []);
-
-  if (!palette) return null;
+  // Read once, lazily, during the first render.
+  //
+  // This was a MutationObserver on `data-theme` feeding setState, because the
+  // palette could change under the reader. Phase 2 removed the light theme, so
+  // the palette is now immutable for the lifetime of the page — an external
+  // store with no external changes. A lazy initialiser is the whole of what is
+  // needed, and it is safe here because this component is `ssr: false`, so the
+  // document exists by the time it renders.
+  const [palette] = useState<Palette>(readPalette);
 
   return (
     <Canvas

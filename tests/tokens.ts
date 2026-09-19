@@ -1,69 +1,93 @@
 /**
- * Parses the design tokens straight out of `globals.css`.
+ * Parses the design tokens straight out of the stylesheets.
  *
  * The contrast suite must assert against the values the browser actually gets,
  * not against a copy maintained by hand. A hand-maintained copy is exactly how
  * the original palette documentation drifted: the CSS claimed every pairing
  * cleared AA while `--color-l0` was being used as a surface with light-theme
  * inks on top of it, at 1.07:1.
+ *
+ * Phase 2 split the system into tiers, so this reads two files:
+ *   styles/tokens.css   Tier 1 raw values, Tier 2 semantic aliases
+ *   styles/levels.css   Tier 3 per-level grounds
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const CSS = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 
-function block(selector: string): Record<string, string> {
-  // Find the selector, then take everything to its matching closing brace.
-  const start = CSS.indexOf(selector);
-  if (start === -1) throw new Error(`No such block in globals.css: ${selector}`);
-  const open = CSS.indexOf("{", start);
+const TOKENS_CSS = read("src/styles/tokens.css");
+const LEVELS_CSS = read("src/styles/levels.css");
+
+/** Takes a selector's body, balancing braces so nested rules do not truncate. */
+function block(css: string, selector: string): Record<string, string> {
+  const start = css.indexOf(selector);
+  if (start === -1) throw new Error(`No such block: ${selector}`);
+  const open = css.indexOf("{", start);
   let depth = 0;
   let end = open;
-  for (let i = open; i < CSS.length; i += 1) {
-    if (CSS[i] === "{") depth += 1;
-    else if (CSS[i] === "}") {
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    else if (css[i] === "}") {
       depth -= 1;
-      if (depth === 0) { end = i; break; }
+      if (depth === 0) {
+        end = i;
+        break;
+      }
     }
   }
-  const body = CSS.slice(open + 1, end);
   const out: Record<string, string> = {};
-  for (const m of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+  for (const m of css.slice(open + 1, end).matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
     out[m[1]!.trim()] = m[2]!.trim();
   }
   return out;
 }
 
-const theme = block("@theme");
-const rootDark = block(":root {");
-const rootLight = block(':root[data-theme="light"]');
+const theme = block(TOKENS_CSS, "@theme");
+const root = block(TOKENS_CSS, ":root {");
 
 /** Resolves `var(--x)` chains down to a literal colour. */
-function resolve(value: string, scope: Record<string, string>): string {
+function resolve(value: string): string {
   let v = value;
   for (let i = 0; i < 10; i += 1) {
     const m = v.match(/^var\((--[\w-]+)\)$/);
     if (!m) return v.trim();
-    const next = scope[m[1]!] ?? theme[m[1]!];
+    const next = root[m[1]!] ?? theme[m[1]!];
     if (next === undefined) throw new Error(`Unresolved token: ${m[1]}`);
     v = next;
   }
   throw new Error(`Token resolution did not converge for: ${value}`);
 }
 
-export type Theme = "dark" | "light";
+export function token(name: string): string {
+  const raw = root[name] ?? theme[name];
+  if (raw === undefined) throw new Error(`Missing token: ${name}`);
+  return resolve(raw);
+}
 
-export function token(name: string, mode: Theme): string {
-  const scope = mode === "light" ? { ...rootDark, ...rootLight } : rootDark;
-  const raw = scope[name] ?? theme[name];
-  if (raw === undefined) throw new Error(`Missing token ${name} in ${mode}`);
-  return resolve(raw, scope);
+/** The per-level grounds from Tier 3, which text also sits on. */
+export function levelGrounds(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const level of ["surface", "interface", "engine", "substrate"]) {
+    const b = block(LEVELS_CSS, `[data-level="${level}"]`);
+    const g = b["--level-ground"];
+    if (!g) throw new Error(`Level ${level} declares no --level-ground`);
+    out[`level:${level}`] = g.startsWith("var(") ? resolve(g) : g;
+  }
+  return out;
 }
 
 /** Every token used as a text colour. */
 export const FOREGROUNDS = [
-  "--fg-hi", "--fg", "--fg-mid", "--fg-low",
-  "--accent", "--state-safe", "--state-unsafe", "--state-waiting",
+  "--fg-hi",
+  "--fg",
+  "--fg-mid",
+  "--fg-low",
+  "--accent",
+  "--cold",
+  "--state-safe",
+  "--state-unsafe",
+  "--state-waiting",
 ] as const;
 
 /**
@@ -72,10 +96,7 @@ export const FOREGROUNDS = [
  * The original 48-pairing check omitted both, which is why two real failures
  * went unnoticed.
  */
-export const SURFACES = [
-  "--ground", "--panel", "--raised", "--deep",
-  "--depth-1", "--depth-2", "--depth-3",
-] as const;
+export const SURFACES = ["--ground", "--panel", "--raised", "--deep"] as const;
 
 // ---- WCAG 2.1 relative luminance / contrast ratio ----
 

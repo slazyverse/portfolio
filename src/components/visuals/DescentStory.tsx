@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import dynamic from "next/dynamic";
-import { animate, stagger } from "animejs";
 import { useScrollCamera } from "@/hooks/useScrollCamera";
 import { useMotionAllowed } from "@/components/providers/MotionProvider";
 import { DESCENT } from "@/data/descent";
+import { webglStore } from "@/lib/capability";
+import { cancelAll, staggerIn } from "@/lib/motion";
 import { cn } from "@/lib/cn";
 
 /* ---------------------------------------------------------------------------
@@ -26,23 +33,11 @@ const DescentScene = dynamic(() => import("./DescentScene"), { ssr: false });
 
 const RANGE = DESCENT.length;
 
-function webglAvailable(): boolean {
-  try {
-    const c = document.createElement("canvas");
-    return !!(
-      window.WebGLRenderingContext &&
-      (c.getContext("webgl2") || c.getContext("webgl"))
-    );
-  } catch {
-    return false;
-  }
-}
 
 export function DescentStory() {
   const motion = useMotionAllowed();
   const [active, setActive] = useState(0);
   const [near, setNear] = useState(false);
-  const [webgl, setWebgl] = useState(false);
   const lastActive = useRef(0);
   const chromeRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +50,15 @@ export function DescentStory() {
   // every input that moves the camera has to ask for a frame explicitly.
   const invalidate = useRef<(() => void) | null>(null);
 
-  useEffect(() => setWebgl(webglAvailable()), []);
+  // A device capability is not React state: it is a fact the server cannot
+  // know and that never changes once measured. Reading it as a store gives the
+  // server a defined answer (false) instead of a post-mount setState, which is
+  // what produced the cascading-render warning here.
+  const webgl = useSyncExternalStore(
+    webglStore.subscribe,
+    webglStore.getSnapshot,
+    webglStore.getServerSnapshot,
+  );
 
   // Only mount the scene once the section is within a screen of the viewport.
   useEffect(() => {
@@ -82,20 +85,17 @@ export function DescentStory() {
   }, []);
 
   // The depth readout re-deals itself each time the camera reaches a new layer.
-  // anime.js is doing what it is good at — a short orchestrated sequence on a
-  // discrete event — rather than being asked to drive anything per frame.
+  //
+  // This was anime.js, which cost 21.5 KB gzipped in the initial bundle to
+  // orchestrate a two-element fade-and-rise. `staggerIn` does the same work on
+  // the native Web Animations API for nothing, and settles on the system's own
+  // --ease-out-expo curve rather than the library's approximation of it.
   useEffect(() => {
     const el = chromeRef.current;
     if (!el || !motion) return;
     const parts = el.querySelectorAll<HTMLElement>("[data-chrome]");
-    if (!parts.length) return;
-    animate(parts, {
-      opacity: [0, 1],
-      translateY: [8, 0],
-      duration: 460,
-      delay: stagger(70),
-      ease: "outExpo",
-    });
+    const animations = staggerIn(parts);
+    return () => cancelAll(animations);
   }, [active, motion]);
 
   const trackRef = useScrollCamera(RANGE, onFrame, motion);
@@ -200,10 +200,15 @@ export function DescentStory() {
                 <p className="t-h3 max-w-[24ch] text-[1.375rem] leading-[1.2] text-[var(--fg-hi)]">
                   {layer.headline}
                 </p>
-                <pre
-                  tabIndex={0}
-                  className="t-mono w-full overflow-x-auto border border-[var(--hair)] bg-[var(--deep)] px-5 py-4 text-left text-[var(--accent)]"
-                >
+                {/* Not focusable, and deliberately so.
+                    This whole track is aria-hidden because the descent is
+                    duplicated verbatim in the sr-only list above; a focusable
+                    element inside an aria-hidden subtree is reachable by
+                    keyboard but invisible to a screen reader, which is the
+                    aria-hidden-focus violation. These snippets are four short
+                    lines, so they wrap instead of scrolling and no scroll
+                    region — and therefore no tabindex — is needed. */}
+                <pre className="t-mono w-full border border-[var(--hair)] bg-[var(--deep)] px-5 py-4 text-left break-words whitespace-pre-wrap text-[var(--accent)]">
                   <code>{layer.lines.join("\n")}</code>
                 </pre>
                 <p className="t-small max-w-[46ch] text-[var(--fg-mid)]">

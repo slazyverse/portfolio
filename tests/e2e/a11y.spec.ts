@@ -10,30 +10,74 @@ import { expect, test } from "@playwright/test";
  * cannot quietly undo any of it.
  */
 
-test.describe("axe", () => {
-  test("home page has no detectable WCAG A/AA violations", async ({ page }) => {
-    await page.goto("/");
-    // Reveals fade from opacity 0, and axe computes contrast against whatever
-    // is painted at that instant. Sampling mid-transition reports dozens of
-    // phantom contrast failures, so wait for the longest reveal to finish.
-    await page.waitForTimeout(2500);
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-      .analyze();
+const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
-    const summary = results.violations.map(
-      (v) => `${v.id} (${v.impact}) ×${v.nodes.length}: ${v.help}`,
-    );
-    expect(summary, summary.join("\n")).toEqual([]);
-  });
+async function audit(
+  page: import("@playwright/test").Page,
+  path: string,
+  disable: string[] = [],
+) {
+  await page.goto(path);
+  let builder = new AxeBuilder({ page }).withTags(WCAG);
+  for (const rule of disable) builder = builder.disableRules(rule);
+  const results = await builder.analyze();
+  return results.violations.map(
+    (v) => `${v.id} (${v.impact}) x${v.nodes.length}: ${v.help}`,
+  );
+}
 
-  test("404 page has no detectable violations", async ({ page }) => {
-    await page.goto("/this-route-does-not-exist");
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-      .analyze();
-    expect(results.violations.map((v) => v.id)).toEqual([]);
-  });
+/**
+ * Contrast is audited with motion OFF, and that is the correct state to audit.
+ *
+ * Reveals are additive: content is present in the markup and JavaScript only
+ * hides it — `[data-reveal-armed]`, opacity 0 — once it has confirmed it can
+ * bring it back on scroll. A freshly loaded page therefore holds ~80 elements
+ * at opacity 0 below the fold, in a state no reader ever sees. axe scores them
+ * inconsistently: sometimes skipped as invisible, sometimes sampled
+ * mid-transition and reported as a contrast failure. Auditing that state makes
+ * the suite pass or fail on timing rather than on the page.
+ *
+ * Under reduced motion the site guarantees its resting state — nothing armed,
+ * everything at its final colour — which is exactly the state a contrast audit
+ * is about. The transitional colours are not a state anyone reads.
+ *
+ * Contrast is additionally proven at the token level: tests/contrast.test.ts
+ * checks all 72 ink-on-surface pairings straight out of the stylesheet, which
+ * is the primary guarantee. This is the render-time confirmation of it.
+ */
+test.describe("axe — settled state", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  for (const [name, path] of [
+    ["home page", "/"],
+    // The laboratory exercises every primitive at once, so it is the cheapest
+    // place to catch one that is inaccessible in isolation.
+    ["system reference", "/system"],
+    ["404 page", "/this-route-does-not-exist"],
+  ] as const) {
+    test(`${name} has no WCAG A/AA violations`, async ({ page }) => {
+      const violations = await audit(page, path);
+      expect(violations, violations.join("\n")).toEqual([]);
+    });
+  }
+});
+
+/**
+ * With motion ON, everything except contrast still has to hold: roles, names,
+ * labels, landmarks and structure do not depend on whether a reveal has fired.
+ * `color-contrast` is disabled here because it is the one rule whose result is
+ * a function of transition timing, and it is fully covered above.
+ */
+test.describe("axe — motion on", () => {
+  for (const [name, path] of [
+    ["home page", "/"],
+    ["system reference", "/system"],
+  ] as const) {
+    test(`${name} has no non-contrast violations`, async ({ page }) => {
+      const violations = await audit(page, path, ["color-contrast"]);
+      expect(violations, violations.join("\n")).toEqual([]);
+    });
+  }
 });
 
 test.describe("structure", () => {
