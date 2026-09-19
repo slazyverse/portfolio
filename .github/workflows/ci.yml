@@ -27,7 +27,24 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # npm ci, with retries for transport failures only.
+      #
+      # Phase 2 first failed here, in both jobs, at this exact step, during an
+      # npm registry maintenance window. A clean `npm ci` against the same
+      # lockfile succeeds (451 packages, 0 vulnerabilities), so there was no
+      # defect to repair: an external outage had failed the merge gate.
+      #
+      # This retries; it does not swallow. A genuine lockfile mismatch fails
+      # identically on all three attempts and still fails the job.
+      - name: Install
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && exit 0
+            echo "npm ci failed (attempt $attempt/3) — retrying"
+            sleep $((attempt * 15))
+          done
+          echo "npm ci failed three times; not transient."
+          exit 1
 
       - name: Typecheck
         run: npm run typecheck
@@ -57,7 +74,24 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # npm ci, with retries for transport failures only.
+      #
+      # Phase 2 first failed here, in both jobs, at this exact step, during an
+      # npm registry maintenance window. A clean `npm ci` against the same
+      # lockfile succeeds (451 packages, 0 vulnerabilities), so there was no
+      # defect to repair: an external outage had failed the merge gate.
+      #
+      # This retries; it does not swallow. A genuine lockfile mismatch fails
+      # identically on all three attempts and still fails the job.
+      - name: Install
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && exit 0
+            echo "npm ci failed (attempt $attempt/3) — retrying"
+            sleep $((attempt * 15))
+          done
+          echo "npm ci failed three times; not transient."
+          exit 1
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - name: axe + structural a11y (desktop and mobile)
@@ -82,6 +116,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # npm ci, with retries for transport failures only.
+      #
+      # Phase 2 first failed here, in both jobs, at this exact step, during an
+      # npm registry maintenance window. A clean `npm ci` against the same
+      # lockfile succeeds (451 packages, 0 vulnerabilities), so there was no
+      # defect to repair: an external outage had failed the merge gate.
+      #
+      # This retries; it does not swallow. A genuine lockfile mismatch fails
+      # identically on all three attempts and still fails the job.
+      - name: Install
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && exit 0
+            echo "npm ci failed (attempt $attempt/3) — retrying"
+            sleep $((attempt * 15))
+          done
+          echo "npm ci failed three times; not transient."
+          exit 1
       - name: Every cited source resolves and every excerpt is verbatim
         run: npm run test:evidence

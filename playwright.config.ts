@@ -9,6 +9,14 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./tests/e2e",
+  /**
+   * Above Playwright's 30s default, because the first `page.goto` against a
+   * freshly started production server has been measured at up to 35s on a cold
+   * machine — the navigation, not the assertion, was timing out. This is a
+   * cold-start allowance, not a slower assertion: every test still passes in
+   * roughly 2s once the server is warm.
+   */
+  timeout: 60_000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
