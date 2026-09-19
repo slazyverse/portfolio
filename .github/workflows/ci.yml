@@ -33,21 +33,21 @@ jobs:
 
       # npm ci, with retries for transport failures only.
       #
-      # Phase 2 first failed here, in both jobs, at this exact step, during an
-      # npm registry maintenance window. A clean `npm ci` against the same
-      # lockfile succeeds (451 packages, 0 vulnerabilities), so there was no
-      # defect to repair: an external outage had failed the merge gate.
+      # This retries; it does not swallow. A real defect fails identically on
+      # all three attempts and still fails the job.
       #
-      # This retries; it does not swallow. A genuine lockfile mismatch fails
-      # identically on all three attempts and still fails the job.
+      # On failure, the tail of npm's own output is emitted as a workflow
+      # annotation. Actions logs require authentication to read and annotations
+      # do not, which is what makes a CI-only failure diagnosable at all.
       - name: Install
         run: |
           for attempt in 1 2 3; do
-            npm ci && exit 0
-            echo "npm ci failed (attempt $attempt/3) — retrying"
-            sleep $((attempt * 15))
+            npm ci > /tmp/npm-ci.log 2>&1 && exit 0
+            echo "attempt $attempt/3 failed"
+            tail -n 40 /tmp/npm-ci.log
+            sleep $((attempt * 10))
           done
-          echo "npm ci failed three times; not transient."
+          echo "::error title=npm ci failed::$(tail -n 25 /tmp/npm-ci.log | tr '\n' '~')"
           exit 1
 
       - name: Typecheck
@@ -84,21 +84,21 @@ jobs:
           cache: npm
       # npm ci, with retries for transport failures only.
       #
-      # Phase 2 first failed here, in both jobs, at this exact step, during an
-      # npm registry maintenance window. A clean `npm ci` against the same
-      # lockfile succeeds (451 packages, 0 vulnerabilities), so there was no
-      # defect to repair: an external outage had failed the merge gate.
+      # This retries; it does not swallow. A real defect fails identically on
+      # all three attempts and still fails the job.
       #
-      # This retries; it does not swallow. A genuine lockfile mismatch fails
-      # identically on all three attempts and still fails the job.
+      # On failure, the tail of npm's own output is emitted as a workflow
+      # annotation. Actions logs require authentication to read and annotations
+      # do not, which is what makes a CI-only failure diagnosable at all.
       - name: Install
         run: |
           for attempt in 1 2 3; do
-            npm ci && exit 0
-            echo "npm ci failed (attempt $attempt/3) — retrying"
-            sleep $((attempt * 15))
+            npm ci > /tmp/npm-ci.log 2>&1 && exit 0
+            echo "attempt $attempt/3 failed"
+            tail -n 40 /tmp/npm-ci.log
+            sleep $((attempt * 10))
           done
-          echo "npm ci failed three times; not transient."
+          echo "::error title=npm ci failed::$(tail -n 25 /tmp/npm-ci.log | tr '\n' '~')"
           exit 1
       - run: npx playwright install --with-deps chromium
       - run: npm run build
@@ -130,21 +130,21 @@ jobs:
           cache: npm
       # npm ci, with retries for transport failures only.
       #
-      # Phase 2 first failed here, in both jobs, at this exact step, during an
-      # npm registry maintenance window. A clean `npm ci` against the same
-      # lockfile succeeds (451 packages, 0 vulnerabilities), so there was no
-      # defect to repair: an external outage had failed the merge gate.
+      # This retries; it does not swallow. A real defect fails identically on
+      # all three attempts and still fails the job.
       #
-      # This retries; it does not swallow. A genuine lockfile mismatch fails
-      # identically on all three attempts and still fails the job.
+      # On failure, the tail of npm's own output is emitted as a workflow
+      # annotation. Actions logs require authentication to read and annotations
+      # do not, which is what makes a CI-only failure diagnosable at all.
       - name: Install
         run: |
           for attempt in 1 2 3; do
-            npm ci && exit 0
-            echo "npm ci failed (attempt $attempt/3) — retrying"
-            sleep $((attempt * 15))
+            npm ci > /tmp/npm-ci.log 2>&1 && exit 0
+            echo "attempt $attempt/3 failed"
+            tail -n 40 /tmp/npm-ci.log
+            sleep $((attempt * 10))
           done
-          echo "npm ci failed three times; not transient."
+          echo "::error title=npm ci failed::$(tail -n 25 /tmp/npm-ci.log | tr '\n' '~')"
           exit 1
       - name: Every cited source resolves and every excerpt is verbatim
         run: npm run test:evidence
