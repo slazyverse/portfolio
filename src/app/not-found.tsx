@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function NotFound() {
   return (
     <main
@@ -9,12 +11,12 @@ export default function NotFound() {
       <p className="t-lead mb-10 text-[var(--fg-mid)]">
         That path doesn&rsquo;t resolve to anything on this site.
       </p>
-      <a
+      <Link
         href="/"
         className="t-label self-start rounded-[2px] border border-[var(--accent)] px-4 py-2.5 text-[var(--accent)] transition-colors hover:bg-[var(--accent-wash)]"
       >
         ← Back to the surface
-      </a>
+      </Link>
     </main>
   );
 }

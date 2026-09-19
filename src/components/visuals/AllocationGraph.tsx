@@ -105,7 +105,14 @@ export function AllocationGraph() {
     const reduce = !motion;
 
     // Colours are read from the live theme so the graph re-grounds in light mode.
-    let palette = { accent: "#ff9e2c", unsafe: "#ff5a5a", waiting: "#6fa8ff", panel: "#0f151e", fg: "#c3ccd9", low: "#5d6878", grid: "rgba(232,237,244,0.032)" };
+    let palette = {
+      accent: "#ff9e2c",
+      unsafe: "#ff5a5a",
+      waiting: "#6fa8ff",
+      panel: "#0f151e",
+      fg: "#c3ccd9",
+      low: "#5d6878",
+    };
     const readPalette = () => {
       const s = getComputedStyle(document.documentElement);
       palette = {
@@ -115,7 +122,6 @@ export function AllocationGraph() {
         panel: readToken(s, "--panel", palette.panel),
         fg: readToken(s, "--fg", palette.fg),
         low: readToken(s, "--fg-low", palette.low),
-        grid: "color-mix(in srgb, currentColor 4%, transparent)",
       };
     };
     readPalette();
@@ -352,10 +358,27 @@ export function AllocationGraph() {
     };
     window.addEventListener("resize", onResize);
 
+    // The theme can change at any time, including while motion is off, so this
+    // is registered before the reduced-motion early return below. Registering
+    // it after meant a reduced-motion visitor who switched theme kept a canvas
+    // painted in the old palette.
+    const theme = new MutationObserver(() => {
+      readPalette();
+      draw();
+    });
+    theme.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
     // Reduced motion: one static, legible safe state. No loop is ever started,
-    // and the pointer never displaces anything.
+    // and the pointer never displaces anything. The canvas still re-paints on a
+    // theme change — that is a correctness concern, not an animation.
     if (reduce) {
-      return () => window.removeEventListener("resize", onResize);
+      return () => {
+        window.removeEventListener("resize", onResize);
+        theme.disconnect();
+      };
     }
 
     canvas.addEventListener("pointermove", toLocal, { passive: true });
@@ -389,15 +412,6 @@ export function AllocationGraph() {
       { threshold: 0.05 },
     );
     visibility.observe(canvas);
-
-    const theme = new MutationObserver(() => {
-      readPalette();
-      draw();
-    });
-    theme.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
 
     return () => {
       window.removeEventListener("resize", onResize);

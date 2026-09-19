@@ -108,12 +108,13 @@ export function RequestTrace() {
                   )}
                 />
 
-                <div
-                  className={cn(
-                    "step",
-                    reached ? "opacity-100" : "opacity-40",
-                  )}
-                >
+                {/* De-emphasis is carried by colour tokens, never by opacity.
+                    Measured: --fg-low needs alpha >= 0.93 over --panel to hold
+                    4.5:1, so any perceptible fade puts real text below AA.
+                    Unreached steps were rendering at 1.77:1. The reached state
+                    is already signalled by the node, the thread and the
+                    left border. */}
+                <div className="step">
                   <p
                     className={cn(
                       "t-small",
@@ -124,8 +125,10 @@ export function RequestTrace() {
                   </p>
                   <p className="t-mono text-[var(--fg-low)]">{layer.file}</p>
 
+
                   {layer.log && (
                     <pre
+                      tabIndex={0}
                       className={cn(
                         "step t-mono mt-2 overflow-x-auto border-l-2 py-1.5 pl-3",
                         reached

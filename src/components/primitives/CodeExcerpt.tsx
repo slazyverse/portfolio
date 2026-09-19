@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { CodeExcerpt as Excerpt } from "@/data/types";
+import { useMotionAllowed } from "@/components/providers/MotionProvider";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -19,16 +20,33 @@ interface Props {
  * Highlighting is deliberately not a runtime syntax highlighter: the excerpts
  * are short and fixed, so shipping a tokenizer to the browser would cost more
  * than it returns.
+ *
+ * Motion is read from MotionProvider rather than from the media query directly.
+ * `data-motion` is the site's single source of truth, and reading the OS
+ * preference here meant the Motion toggle did not govern this component in
+ * either direction.
  */
 export function CodeExcerpt({ excerpt }: Props) {
   const ref = useRef<HTMLElement>(null);
+  const motion = useMotionAllowed();
 
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const lines = Array.from(root.querySelectorAll<HTMLElement>(".code-line"));
+
+    // Same contract as Reveal: if the visitor turns motion off later, unarm so
+    // no line is left hidden behind a transition that will never run.
+    if (!motion) {
+      for (const line of lines) {
+        delete line.dataset.revealArmed;
+        delete line.dataset.revealed;
+        line.style.transitionDelay = "";
+      }
+      return;
+    }
+
     for (const line of lines) line.dataset.revealArmed = "true";
 
     const observer = new IntersectionObserver(
@@ -47,12 +65,12 @@ export function CodeExcerpt({ excerpt }: Props) {
 
     observer.observe(root);
     return () => observer.disconnect();
-  }, []);
+  }, [motion]);
 
   return (
     <figure
       ref={ref as React.Ref<HTMLElement>}
-      className="lift overflow-hidden border border-[var(--hair)] bg-[var(--color-l0)]"
+      className="lift overflow-hidden border border-[var(--hair)] bg-[var(--deep)]"
     >
       <figcaption className="t-mono flex items-center justify-between gap-4 border-b border-[var(--hair)] px-4 py-3 text-[var(--fg-low)]">
         <a
@@ -66,7 +84,9 @@ export function CodeExcerpt({ excerpt }: Props) {
         <span className="shrink-0">{excerpt.range}</span>
       </figcaption>
 
-      <div className="overflow-x-auto py-4">
+      {/* Focusable: a region that scrolls must be reachable without a
+          pointer. Only fails at narrow widths, where the excerpt overflows. */}
+      <div className="overflow-x-auto py-4" tabIndex={0}>
         <pre className="t-mono">
           <code className={`language-${excerpt.language}`}>
             {excerpt.lines.map((line) => (

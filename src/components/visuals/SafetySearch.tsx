@@ -102,7 +102,7 @@ export function SafetySearch() {
           </span>
         </figcaption>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" tabIndex={0}>
           <table className="w-full min-w-[440px] border-collapse">
             <caption className="sr-only">
               Banker&rsquo;s Algorithm state. Each process shows its remaining
@@ -134,7 +134,9 @@ export function SafetySearch() {
                     className={cn(
                       "step border-t border-[var(--hair-faint)]",
                       isActive && "bg-[var(--accent-wash)]",
-                      isDone && !isActive && "opacity-45",
+                      // Resolved rows are keyed by colour (--state-safe on the
+                      // label, the vector and the status) rather than faded.
+                      // A 45% fade put this row's text at ~2.5:1.
                     )}
                   >
                     <th

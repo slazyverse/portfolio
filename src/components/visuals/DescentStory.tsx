@@ -118,7 +118,10 @@ export function DescentStory() {
   return (
     <>
       {/* The story as text — always present, always complete, always in order. */}
-      <ol className={use3D ? "sr-only" : "sr-only"}>
+      {/* Always sr-only: in 3D the canvas is aria-hidden, and in the fallback
+          the stacked panels are too, so this list is the accessible copy of the
+          descent in both modes. */}
+      <ol className="sr-only">
         {DESCENT.map((layer) => (
           <li key={layer.index}>
             <h3>{`${layer.index} ${layer.name} — ${layer.headline}`}</h3>
@@ -197,7 +200,10 @@ export function DescentStory() {
                 <p className="t-h3 max-w-[24ch] text-[1.375rem] leading-[1.2] text-[var(--fg-hi)]">
                   {layer.headline}
                 </p>
-                <pre className="t-mono w-full overflow-x-auto border border-[var(--hair)] bg-[var(--color-l0)] px-5 py-4 text-left text-[var(--accent)]">
+                <pre
+                  tabIndex={0}
+                  className="t-mono w-full overflow-x-auto border border-[var(--hair)] bg-[var(--deep)] px-5 py-4 text-left text-[var(--accent)]"
+                >
                   <code>{layer.lines.join("\n")}</code>
                 </pre>
                 <p className="t-small max-w-[46ch] text-[var(--fg-mid)]">

@@ -23,7 +23,13 @@ export function useScrollCamera(
   const trackRef = useRef<HTMLDivElement>(null);
   const frame = useRef<number | null>(null);
   const callback = useRef(onFrame);
-  callback.current = onFrame;
+
+  // Kept current in an effect rather than assigned during render. Writing to a
+  // ref while rendering is a render-phase side effect; the scroll loop only
+  // reads this after paint, so an effect is both correct and sufficient.
+  useEffect(() => {
+    callback.current = onFrame;
+  });
 
   useEffect(() => {
     const track = trackRef.current;

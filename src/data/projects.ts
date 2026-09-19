@@ -79,7 +79,6 @@ export const DEADLOCKD: Project = {
       { n: 28, code: "\t\tcopy(alloc[i], state.Allocation[i])" },
       { n: 29, code: "\t}" },
       { n: 30, code: "\tstate.Mu.Unlock()", highlight: true },
-      { n: 32, code: "\t// the O(P²·R) search below runs on the snapshot" },
     ],
   },
 };

@@ -18,12 +18,14 @@
   --color-rule: rgba(232, 237, 244, 0.11);
   --color-rule-strong: rgba(232, 237, 244, 0.2);
 
-  /* Ink — every step verified ≥4.5:1 (AA) against both --l1 and --l2.
-     ink-low is metadata, but metadata is still text, so it clears AA too. */
+  /* Ink — every step verified ≥4.5:1 (AA) against EVERY surface token, not
+     just --l1 and --l2. The narrower original check missed --raised, which
+     carries hover states: ink-low sat on it at 4.41:1. Enforced by
+     tests/contrast.test.ts, which reads these values out of this file. */
   --color-ink-hi: #e9eef6; /* 16.7:1 */
   --color-ink: #c3ccd9; /* 12.0:1 */
   --color-ink-mid: #98a5b7; /*  7.8:1 */
-  --color-ink-low: #788495; /*  5.1:1 */
+  --color-ink-low: #7c8899; /*  4.7:1 on --raised · 5.4:1 on --ground */
 
   /* Signal — the single accent */
   --color-signal: #ff9e2c;
@@ -47,6 +49,13 @@
 :root {
   /* Semantic surface aliases — components read these, never raw ramp values,
      so the light theme below can re-ground everything in one place. */
+  /* The deepest surface: code panels, the footer, bedrock.
+     This is a TIER-2 semantic alias precisely so the light theme can
+     re-ground it. Reaching past it to the raw --color-l0 ramp value is what
+     produced 1.07:1 text in light mode. Components must never use --color-l0
+     directly as a surface. */
+  --deep: var(--color-l0);
+
   --ground: var(--color-l1);
   --panel: var(--color-l2);
   --raised: var(--color-l3);
@@ -64,6 +73,10 @@
   --accent: var(--color-signal);
   --accent-dim: var(--color-signal-dim);
   --accent-wash: var(--color-signal-wash);
+  /* The correct foreground for text sitting ON --accent. In dark the accent is
+     bright amber so this is near-black; in light the accent is a dark brown, so
+     it inverts. Carries the skip link, which must clear AA in both themes. */
+  --on-accent: var(--color-l0);
 
   --state-safe: var(--color-safe);
   --state-unsafe: var(--color-unsafe);
@@ -83,6 +96,9 @@
 /* Light mode — engineering paper. Warm-white ground, ink-blue text,
    amber darkened to hold contrast. Not an inversion. */
 :root[data-theme="light"] {
+  /* Re-grounded, not inherited. Verified against every ink step. */
+  --deep: #efece4;
+
   --ground: #f7f6f3;
   --panel: #ffffff;
   --raised: #f1efea;
@@ -102,6 +118,7 @@
   --accent: #9e4f00; /*  5.4:1 top · 5.0:1 deepest */
   --accent-dim: #7d3e00;
   --accent-wash: rgba(158, 79, 0, 0.09);
+  --on-accent: #ffffff; /*  5.9:1 on --accent */
 
   --state-safe: #0f7553; /*  5.3:1 */
   --state-unsafe: #b02318; /*  6.3:1 */
@@ -146,7 +163,7 @@ body {
 
 ::selection {
   background: var(--accent);
-  color: var(--color-l0);
+  color: var(--on-accent);
 }
 
 :focus-visible {
@@ -267,7 +284,7 @@ p {
   z-index: 100;
   padding: 0.75rem 1.25rem;
   background: var(--accent);
-  color: var(--color-l0);
+  color: var(--on-accent);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   letter-spacing: 0.12em;
