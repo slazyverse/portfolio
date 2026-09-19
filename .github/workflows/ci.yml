@@ -24,7 +24,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 ships npm 11, which is what generates this lockfile.
+          # Node 22 ships npm 10, and npm 10 rejects an npm 11 lockfile with
+          # ECOMPROMISED "Lock compromised" in about a second — which is
+          # exactly how every CI run had been failing, since Phase 1.
+          node-version: 24
           cache: npm
 
       # npm ci, with retries for transport failures only.
@@ -72,7 +76,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 ships npm 11, which is what generates this lockfile.
+          # Node 22 ships npm 10, and npm 10 rejects an npm 11 lockfile with
+          # ECOMPROMISED "Lock compromised" in about a second — which is
+          # exactly how every CI run had been failing, since Phase 1.
+          node-version: 24
           cache: npm
       # npm ci, with retries for transport failures only.
       #
@@ -114,7 +122,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 ships npm 11, which is what generates this lockfile.
+          # Node 22 ships npm 10, and npm 10 rejects an npm 11 lockfile with
+          # ECOMPROMISED "Lock compromised" in about a second — which is
+          # exactly how every CI run had been failing, since Phase 1.
+          node-version: 24
           cache: npm
       # npm ci, with retries for transport failures only.
       #
