@@ -50,16 +50,85 @@ test.describe("axe — settled state", () => {
 
   for (const [name, path] of [
     ["home page", "/"],
+    ["profile", "/dossier"],
+    ["systems", "/systems"],
+    ["projects index", "/contracts"],
+    ["a contract dossier", "/contracts/apix"],
+    ["engineering record", "/record"],
+    ["colophon", "/colophon"],
+    ["evidence index", "/verify"],
+    ["contact", "/contact"],
     // The laboratory exercises every primitive at once, so it is the cheapest
     // place to catch one that is inaccessible in isolation.
     ["system reference", "/system"],
     ["404 page", "/this-route-does-not-exist"],
+    ["unknown contract slug", "/contracts/does-not-exist"],
   ] as const) {
     test(`${name} has no WCAG A/AA violations`, async ({ page }) => {
       const violations = await audit(page, path);
       expect(violations, violations.join("\n")).toEqual([]);
     });
   }
+});
+
+/**
+ * Routing behaviour that only exists because Phase 3 added real routes.
+ *
+ * Client navigation does not reload the document, so none of this is free: a
+ * screen-reader user hears nothing and a keyboard user keeps focus on a link
+ * that no longer exists unless it is handled explicitly.
+ */
+test.describe("routing", () => {
+  test("an unknown contract slug reaches not-found, not an empty page", async ({ page }) => {
+    const res = await page.goto("/contracts/definitely-not-a-project");
+    expect(res?.status()).toBe(404);
+    await expect(page.locator("main#main")).toContainText(/no layer here/i);
+  });
+
+  test("every navigable route responds and has one h1", async ({ page }) => {
+    for (const path of [
+      "/",
+      "/dossier",
+      "/systems",
+      "/contracts",
+      "/record",
+      "/colophon",
+      "/verify",
+      "/contact",
+    ]) {
+      const res = await page.goto(path);
+      expect(res?.status(), `${path} status`).toBe(200);
+      await expect(page.locator("main h1"), `${path} h1 count`).toHaveCount(1);
+      // The document title must carry the conventional name, not the in-world
+      // one — a browser tab reading "CONTRACTS" helps nobody.
+      expect(await page.title(), `${path} title`).not.toBe("");
+    }
+  });
+
+  test("navigating moves focus to the main region", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("link", { name: "projects" }).first().click();
+    await page.waitForURL("**/contracts");
+
+    const focusedId = await page.evaluate(() => document.activeElement?.id ?? "");
+    expect(focusedId, "focus should land on #main after a route change").toBe("main");
+  });
+
+  test("navigating announces the new route by its conventional name", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("link", { name: "profile" }).first().click();
+    await page.waitForURL("**/dossier");
+
+    const announcer = page.locator('[aria-live="polite"]').first();
+    await expect(announcer).toContainText(/navigated to profile/i);
+  });
+
+  test("the current route is marked in the navigation", async ({ page }) => {
+    await page.goto("/contracts");
+    const current = page.locator('nav[aria-label="Primary"] a[aria-current="page"]');
+    await expect(current).toHaveCount(1);
+    await expect(current).toContainText("CONTRACTS");
+  });
 });
 
 /**
