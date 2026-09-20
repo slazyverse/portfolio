@@ -108,6 +108,15 @@
 
   /* --- Geometry. Maximum radius is 2px, everywhere, permanently. Depth
          comes from border hierarchy and surface delta, never from shadow. -- */
+  /* How much of the procedural environment is allowed through, behind the
+     content column and at the outer edges respectively.
+
+     The centre value is asserted against the worst-case environment pixel in
+     the contrast suite. Lowering it puts text at risk; the edge value carries
+     no text and is a composition choice. */
+  --env-scrim: 0.94;
+  --env-scrim-edge: 0.25;
+
   --radius: 2px;
   --hair-w: 1px;
   --notch: 10px;

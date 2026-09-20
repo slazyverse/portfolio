@@ -3,6 +3,7 @@ import {
   contrast,
   FOREGROUNDS,
   levelGrounds,
+  parseHex,
   SURFACES,
   token,
 } from "./tokens";
@@ -116,5 +117,82 @@ describe("token hygiene", () => {
       separation,
       `accent ${token("--accent")} (${a.toFixed(0)}deg) vs cold ${token("--cold")} (${c.toFixed(0)}deg) = ${separation.toFixed(0)}deg apart`,
     ).toBeGreaterThan(90);
+  });
+});
+
+/* ------------------------------------------------- the environment scrim --- */
+
+/**
+ * The procedural environment composites underneath every page.
+ *
+ * Everything above this point measures declared token pairs, which is the
+ * right thing to measure right up until a full-viewport WebGL layer starts
+ * drawing behind the text. Then the effective background is no longer the
+ * token — it is the token with a city composited into it — and a suite that
+ * only reads computed CSS would keep reporting the old numbers while the real
+ * contrast behind a paragraph fell to roughly 2.6:1.
+ *
+ * So the environment's contribution is bounded by a scrim, and the bound is
+ * checked here against the brightest pixel the city is capable of producing.
+ */
+describe("environment scrim keeps text legible over the city", () => {
+  const scrim = Number(token("--env-scrim"));
+  const ground = parseHex(token("--deep"));
+
+  /** The worst case: a fully lit cell at full intensity, under the scrim. */
+  function throughScrim(hex: string): string {
+    const src = parseHex(hex);
+    const out = src.map((c, i) => Math.round(scrim * ground[i]! + (1 - scrim) * c));
+    return `#${out.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+  }
+
+  it("declares a scrim alpha", () => {
+    expect(Number.isFinite(scrim)).toBe(true);
+    expect(scrim).toBeGreaterThan(0);
+    expect(scrim).toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * The colours the renderer can actually put on screen.
+   *
+   * Not a guessed list: these are exactly the tokens `CityScene` reads —
+   * `--accent` and `--cold` for lit cells, `--color-l3` for facades. An
+   * earlier version of this test also checked `--fg-hi`, which the city never
+   * draws; a test that fails on a case that cannot occur teaches you to widen
+   * the bound for no reason.
+   */
+  const ENVIRONMENT_COLOURS = ["--accent", "--cold", "--color-l3"] as const;
+
+  /** The inks that sit over the environment on a page. */
+  const INKS = ["--fg", "--fg-hi", "--fg-mid", "--fg-low"] as const;
+
+  for (const signal of ENVIRONMENT_COLOURS) {
+    for (const ink of INKS) {
+      it(`${ink} clears AA over ${signal} seen through the scrim`, () => {
+        const ratio = contrast(token(ink), throughScrim(token(signal)));
+        expect(
+          ratio,
+          `${ink} over ${signal} through scrim = ${ratio.toFixed(2)}:1`,
+        ).toBeGreaterThanOrEqual(AA_NORMAL);
+      });
+    }
+  }
+
+  it("keeps a real margin over AA at the worst pairing", () => {
+    let worst = Infinity;
+    let where = "";
+    for (const signal of ENVIRONMENT_COLOURS) {
+      for (const ink of INKS) {
+        const ratio = contrast(token(ink), throughScrim(token(signal)));
+        if (ratio < worst) {
+          worst = ratio;
+          where = `${ink} over ${signal}`;
+        }
+      }
+    }
+    // Recorded rather than merely passed. If a change to the palette or the
+    // scrim erodes this, the number in the docs is wrong and this says so.
+    expect(worst, `worst environment pairing: ${where} at ${worst.toFixed(2)}:1`)
+      .toBeGreaterThanOrEqual(5);
   });
 });
