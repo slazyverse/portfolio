@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 
 /**
  * Route-level error boundary. A portfolio that white-screens on a client error
@@ -45,12 +46,12 @@ export default function Error({
         >
           Retry
         </button>
-        <a
+        <Link
           href="/"
           className="t-label rounded-[2px] border border-[var(--hair)] px-4 py-2.5 text-[var(--fg-mid)] transition-colors hover:border-[var(--fg-mid)] hover:text-[var(--fg-hi)]"
         >
           Back to the surface
-        </a>
+        </Link>
       </div>
     </main>
   );

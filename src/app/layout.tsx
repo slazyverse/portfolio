@@ -66,24 +66,28 @@ export const metadata: Metadata = {
   },
 };
 
+/**
+ * SUBSTRATE is dark-only. The light theme was removed in Phase 2: a diegetic
+ * system interface with a daylight mode is incoherent, and maintaining two
+ * verified palettes doubled the contrast surface for no gain. Readers who need
+ * a different rendering are served by forced-colors and the print stylesheet.
+ */
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#090d13" },
-    { media: "(prefers-color-scheme: light)", color: "#f7f6f3" },
-  ],
-  colorScheme: "dark light",
+  themeColor: "#090d13",
+  colorScheme: "dark",
 };
 
 /**
- * Applied before first paint so a stored light-theme preference never flashes
- * dark. Inline by necessity — anything deferred is too late.
+ * Resolves the motion preference before first paint, so the page never renders
+ * a frame under the wrong contract. Inline by necessity — anything deferred is
+ * too late.
+ *
+ * `data-motion` is the single source of truth that both CSS and JS read, which
+ * is why it is set here rather than left to hydration.
  */
 const NO_FLASH = `
 try {
   var d = document.documentElement;
-  var t = localStorage.getItem("theme");
-  if (t === "light" || t === "dark") d.setAttribute("data-theme", t);
-
   var m = localStorage.getItem("motion");
   if (m !== "full" && m !== "reduced") {
     m = matchMedia("(prefers-reduced-motion: reduce)").matches ? "reduced" : "full";
@@ -123,9 +127,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-theme="dark"
-      // The no-flash script below rewrites data-theme before React hydrates,
-      // so the server and client values legitimately differ on first paint.
+      // The no-flash script below sets data-motion before React hydrates, so
+      // the server and client values legitimately differ on first paint.
       suppressHydrationWarning
       className={`${archivo.variable} ${jetbrains.variable}`}
     >

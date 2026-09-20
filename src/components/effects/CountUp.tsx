@@ -17,17 +17,19 @@ interface Props {
  */
 export function CountUp({ value }: Props) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [display, setDisplay] = useState(value);
   const motion = useMotionAllowed();
+
+  // `counted` holds the in-flight animated value and is null whenever the
+  // count is not running. What renders is derived from it rather than synced
+  // into it, so turning motion off does not need an effect to write state —
+  // the final value simply becomes what it always was.
+  const [counted, setCounted] = useState<string | null>(null);
+  const display = motion && counted !== null ? counted : value;
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-
-    if (!motion) {
-      setDisplay(value);
-      return;
-    }
+    if (!motion) return;
 
     const digits = value.replace(/,/g, "");
     if (!/^\d+$/.test(digits)) return;
@@ -51,11 +53,11 @@ export function CountUp({ value }: Props) {
             // step with the elements around them.
             const eased = 1 - Math.pow(1 - t, 4);
             const current = Math.round(target * eased);
-            setDisplay(grouped ? current.toLocaleString("en-US") : String(current));
+            setCounted(grouped ? current.toLocaleString("en-US") : String(current));
             if (t < 1) raf = requestAnimationFrame(tick);
           };
 
-          setDisplay(grouped ? "0" : "0");
+          setCounted("0");
           raf = requestAnimationFrame(tick);
         }
       },
@@ -66,6 +68,9 @@ export function CountUp({ value }: Props) {
     return () => {
       observer.disconnect();
       cancelAnimationFrame(raf);
+      // Hand rendering back to the derived value, so a re-run never leaves a
+      // half-counted number on screen.
+      setCounted(null);
     };
   }, [value, motion]);
 

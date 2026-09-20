@@ -104,8 +104,16 @@ export function AllocationGraph() {
 
     const reduce = !motion;
 
-    // Colours are read from the live theme so the graph re-grounds in light mode.
-    let palette = { accent: "#ff9e2c", unsafe: "#ff5a5a", waiting: "#6fa8ff", panel: "#0f151e", fg: "#c3ccd9", low: "#5d6878", grid: "rgba(232,237,244,0.032)" };
+    // Colours come from the live token layer rather than being duplicated here,
+    // so the graph can never disagree with the stylesheet.
+    let palette = {
+      accent: "#ff9e2c",
+      unsafe: "#ff5a5a",
+      waiting: "#6fa8ff",
+      panel: "#0f151e",
+      fg: "#c3ccd9",
+      low: "#5d6878",
+    };
     const readPalette = () => {
       const s = getComputedStyle(document.documentElement);
       palette = {
@@ -115,7 +123,6 @@ export function AllocationGraph() {
         panel: readToken(s, "--panel", palette.panel),
         fg: readToken(s, "--fg", palette.fg),
         low: readToken(s, "--fg-low", palette.low),
-        grid: "color-mix(in srgb, currentColor 4%, transparent)",
       };
     };
     readPalette();
@@ -352,6 +359,11 @@ export function AllocationGraph() {
     };
     window.addEventListener("resize", onResize);
 
+    // Phase 1 watched `data-theme` here so a reduced-motion visitor who
+    // switched theme did not keep a canvas painted in the old palette. Phase 2
+    // removed the light theme, so there is no longer a theme to switch and the
+    // observer would never fire. The palette is read once, above.
+
     // Reduced motion: one static, legible safe state. No loop is ever started,
     // and the pointer never displaces anything.
     if (reduce) {
@@ -390,21 +402,11 @@ export function AllocationGraph() {
     );
     visibility.observe(canvas);
 
-    const theme = new MutationObserver(() => {
-      readPalette();
-      draw();
-    });
-    theme.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-
     return () => {
       window.removeEventListener("resize", onResize);
       canvas.removeEventListener("pointermove", toLocal);
       canvas.removeEventListener("pointerleave", clearPointer);
       visibility.disconnect();
-      theme.disconnect();
       if (raf !== null) cancelAnimationFrame(raf);
     };
   }, [motion]);

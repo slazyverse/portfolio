@@ -1,121 +1,26 @@
 @import "tailwindcss";
 
-/* ============================================================
-   THE LAYER UNDERNEATH — design tokens
-   Dark-first. Light mode is a re-grounding, not an inversion.
-   ============================================================ */
+/* ============================================================================
+   SUBSTRATE — Sagar Tailor
+   ============================================================================
 
-@theme {
-  /* Substrate ramp — deeper = further down the stack */
-  --color-l0: #05070a;
-  --color-l1: #090d13;
-  --color-l2: #0f151e;
-  --color-l3: #161e2a;
-  --color-l4: #222d3d;
+   The design system is layered, and the layers import in dependency order:
 
-  /* Hairlines */
-  --color-rule-faint: rgba(232, 237, 244, 0.06);
-  --color-rule: rgba(232, 237, 244, 0.11);
-  --color-rule-strong: rgba(232, 237, 244, 0.2);
+     tokens.css    TIER 1 raw values  +  TIER 2 semantic aliases
+     levels.css    TIER 3 per-level overrides (surface/interface/engine/substrate)
+     recipes.css   TIER 4 component recipes
 
-  /* Ink — every step verified ≥4.5:1 (AA) against both --l1 and --l2.
-     ink-low is metadata, but metadata is still text, so it clears AA too. */
-  --color-ink-hi: #e9eef6; /* 16.7:1 */
-  --color-ink: #c3ccd9; /* 12.0:1 */
-  --color-ink-mid: #98a5b7; /*  7.8:1 */
-  --color-ink-low: #788495; /*  5.1:1 */
+   This file holds only what is genuinely global: the reset, the type scale,
+   the motion contract, and the print and forced-colors treatments.
 
-  /* Signal — the single accent */
-  --color-signal: #ff9e2c;
-  --color-signal-dim: #b86c14;
-  --color-signal-wash: rgba(255, 158, 44, 0.1);
+   Two rules run through all of it:
+     - a component never names a raw value; it reads a Tier 2 alias
+     - de-emphasis is a colour token, never an opacity
+   ========================================================================= */
 
-  /* Semantic — only where the system has a real state */
-  --color-safe: #3ddc91;
-  --color-unsafe: #ff5a5a;
-  --color-waiting: #6fa8ff;
-
-  /* Type */
-  --font-sans: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
-
-  /* Motion */
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-precise: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-:root {
-  /* Semantic surface aliases — components read these, never raw ramp values,
-     so the light theme below can re-ground everything in one place. */
-  --ground: var(--color-l1);
-  --panel: var(--color-l2);
-  --raised: var(--color-l3);
-  --edge: var(--color-l4);
-
-  --hair-faint: var(--color-rule-faint);
-  --hair: var(--color-rule);
-  --hair-strong: var(--color-rule-strong);
-
-  --fg-hi: var(--color-ink-hi);
-  --fg: var(--color-ink);
-  --fg-mid: var(--color-ink-mid);
-  --fg-low: var(--color-ink-low);
-
-  --accent: var(--color-signal);
-  --accent-dim: var(--color-signal-dim);
-  --accent-wash: var(--color-signal-wash);
-
-  --state-safe: var(--color-safe);
-  --state-unsafe: var(--color-unsafe);
-  --state-waiting: var(--color-waiting);
-
-  /* The ground for strata 01–03. The page steps through these as the reader
-     descends. Every ink colour is contrast-checked against the deepest one,
-     not just against the top of the page. */
-  --depth-1: #070a10;
-  --depth-2: #05080d;
-  --depth-3: #04060a;
-
-  --rail-w: 72px;
-  color-scheme: dark;
-}
-
-/* Light mode — engineering paper. Warm-white ground, ink-blue text,
-   amber darkened to hold contrast. Not an inversion. */
-:root[data-theme="light"] {
-  --ground: #f7f6f3;
-  --panel: #ffffff;
-  --raised: #f1efea;
-  --edge: #e2ded5;
-
-  --hair-faint: rgba(12, 17, 25, 0.07);
-  --hair: rgba(12, 17, 25, 0.13);
-  --hair-strong: rgba(12, 17, 25, 0.24);
-
-  --fg-hi: #0c1119; /* 17.5:1 */
-  --fg: #2c3542; /* 11.5:1 */
-  --fg-mid: #4e5866; /*  6.7:1 top · 5.8:1 deepest */
-  --fg-low: #5f6875; /*  5.2:1 top · 4.8:1 deepest */
-
-  /* Amber darkened until it clears AA as small text, not just as a large-text
-     accent — it carries links and section indices, which are small. */
-  --accent: #9e4f00; /*  5.4:1 top · 5.0:1 deepest */
-  --accent-dim: #7d3e00;
-  --accent-wash: rgba(158, 79, 0, 0.09);
-
-  --state-safe: #0f7553; /*  5.3:1 */
-  --state-unsafe: #b02318; /*  6.3:1 */
-  --state-waiting: #1f51bc; /*  6.6:1 */
-
-  /* Light mode descends too, but far less: here going deeper costs contrast
-     instead of adding it, so the steps are gentle and the inks above are
-     verified against --depth-3. */
-  --depth-1: #f4f2ee;
-  --depth-2: #f1efe9;
-  --depth-3: #eeece5;
-
-  color-scheme: light;
-}
+@import "../styles/tokens.css";
+@import "../styles/levels.css";
+@import "../styles/recipes.css";
 
 /* ============================================================
    Base
@@ -146,16 +51,15 @@ body {
 
 ::selection {
   background: var(--accent);
-  color: var(--color-l0);
+  color: var(--on-accent);
 }
 
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius);
 }
 
-/* Headings never skip and never wrap badly */
 h1,
 h2,
 h3,
@@ -170,13 +74,22 @@ p {
   margin: 0;
 }
 
-/* Digits must not jitter while numbers animate or tables align */
+/* Digits must not jitter while numbers animate or columns align. */
 .tnum {
   font-variant-numeric: tabular-nums;
 }
 
 /* ============================================================
    Type scale — fluid, clamp-based
+
+   The pairing is load-bearing and deliberate:
+
+     Archivo         prose, headings, signage. Its `wdth` axis lets stratum
+                     labels compress into signage without a third family.
+     JetBrains Mono  MACHINE / VERIFIED / SYSTEM DATA — and nothing else.
+
+   Mono means the value came from a repository, a build, or a measurement.
+   Setting body copy in mono destroys that signal, so don't.
    ============================================================ */
 
 .t-display {
@@ -216,7 +129,7 @@ p {
 .t-body {
   font-size: clamp(1rem, 1.1vw, 1.0625rem);
   line-height: 1.65;
-  max-width: 68ch;
+  max-width: var(--measure);
 }
 
 .t-small {
@@ -240,7 +153,7 @@ p {
   text-transform: uppercase;
 }
 
-/* Archivo's width axis — stratum labels compress into signage */
+/* Archivo's width axis — stratum labels compress into signage. */
 .t-cond {
   font-variation-settings: "wdth" 78;
   font-weight: 600;
@@ -256,18 +169,18 @@ p {
   border-color: var(--hair);
 }
 
-/* Skip link — first in tab order, invisible until focused */
-/* Offset vertically rather than to -9999px: a far-left absolute element can
+/* Skip link — first in tab order, invisible until focused.
+   Offset vertically rather than to -9999px: a far-left absolute element can
    extend the scrollable area in some engines. */
 .skip {
   position: fixed;
   left: 0;
   top: 0;
   transform: translateY(-200%);
-  z-index: 100;
+  z-index: var(--z-skip);
   padding: 0.75rem 1.25rem;
   background: var(--accent);
-  color: var(--color-l0);
+  color: var(--on-accent);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   letter-spacing: 0.12em;
@@ -282,21 +195,6 @@ p {
    The descent
    ============================================================ */
 
-/* The ground deepens in four steps rather than a continuously-fading
-   full-viewport layer. A fixed overlay whose opacity changes every frame forces
-   a fullscreen composite 60 times a second; on integrated graphics that is the
-   single most expensive thing this page could do, for an effect the reader
-   perceives as four gradual stages anyway. This is a background-color
-   transition that fires four times in total. */
-
-body {
-  transition: background-color 900ms var(--ease-precise);
-}
-
-:root[data-stratum="1"] body { background-color: var(--depth-1); }
-:root[data-stratum="2"] body { background-color: var(--depth-2); }
-:root[data-stratum="3"] body { background-color: var(--depth-3); }
-
 /* The rail fill reads scroll progress straight from the custom property, so it
    never costs a React render. */
 .rail-fill {
@@ -304,9 +202,8 @@ body {
   height: calc(var(--depth, 0) * 100%);
 }
 
-/* The descent frame.
-   No `perspective` or `preserve-3d`: the layers only scale and translate, never
-   rotate, so a 3D rendering context buys nothing visually while adding
+/* No `perspective` or `preserve-3d`: the layers only scale and translate,
+   never rotate, so a 3D rendering context buys nothing visually while adding
    compositing work. Measured at parity, so it goes.
    `contain` stops the absolutely-positioned stack from invalidating layout
    outside the frame. */
@@ -318,7 +215,7 @@ body {
    animation is one transition on transform and opacity — compositor-only, and
    rasterised once per state rather than once per frame.
 
-   The scale range is narrow on purpose: 0.88 → 1 → 1.12. Scaling text forces
+   The scale range is narrow on purpose: 0.88 -> 1 -> 1.12. Scaling text forces
    re-rasterisation, so range is not free, and a dolly reads from relative
    change rather than absolute magnitude. */
 .descent-layer {
@@ -332,7 +229,6 @@ body {
   transform: translate3d(0, 30px, 0) scale(0.88);
   opacity: 0;
   pointer-events: none;
-  /* Ahead layers are never composited or hit-tested. */
   visibility: hidden;
 }
 
@@ -368,14 +264,19 @@ body {
 
 /* ============================================================
    Motion
+
    Every rule here is additive: content is visible in the markup, and only
    becomes hidden once JS sets [data-reveal-armed], which it never does under
    reduced motion. No-JS and reduced-motion readers get the finished page.
+
+   Primitives: REVEAL, SCAN, SETTLE, SIGNAL, GLITCH, ROUTE.
    ============================================================ */
 
-/* No `will-change` here: Reveal sets it just before the transition and clears
+/* --- REVEAL: an element arrives -------------------------------------------
+   No `will-change` here: Reveal sets it just before the transition and clears
    it on transitionend. Held permanently, 71 elements would pin 71 GPU layers
    for the whole session. */
+
 [data-reveal][data-reveal-armed] {
   opacity: 0;
   transition:
@@ -422,22 +323,6 @@ body {
   transform: none;
 }
 
-/* Panels lift very slightly toward the reader on hover. 2px, not 8 — this is
-   an instrument panel, not a card in a marketing grid. */
-.lift {
-  transition:
-    transform 320ms var(--ease-out-expo),
-    border-color 320ms var(--ease-precise),
-    background-color 320ms var(--ease-precise);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .lift:hover {
-    transform: translateY(-2px);
-    border-color: var(--hair-strong);
-  }
-}
-
 /* The stratum rule draws itself across as the marker enters. */
 .rule-draw {
   transform-origin: left center;
@@ -478,7 +363,7 @@ body {
   transform: none;
 }
 
-/* Sequence steps — used by the scrubbed diagrams. */
+/* --- SETTLE: a sequence steps forward ----------------------------------- */
 .step {
   transition:
     opacity 380ms var(--ease-precise),
@@ -488,10 +373,71 @@ body {
     color 380ms var(--ease-precise);
 }
 
-/* The gate is the attribute, not the media query.
-   MotionProvider resolves the OS preference and any explicit override into
-   data-motion, so CSS and JS read the same single source of truth and cannot
-   disagree. The media query is the pre-hydration fallback only. */
+/* --- SCAN: a line sweeps a panel once, on arrival ----------------------- */
+@keyframes scan-sweep {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(100%); }
+}
+
+.scan {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 35%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--accent) 7%, transparent),
+    transparent
+  );
+  animation: scan-sweep 2.4s var(--ease-in-out);
+}
+
+/* --- SIGNAL: a value updated, marked without moving anything ------------ */
+@keyframes signal-pulse {
+  0% { border-color: var(--accent); }
+  100% { border-color: var(--hair); }
+}
+
+.signal-pulse {
+  animation: signal-pulse var(--dur-slow) var(--ease-precise);
+}
+
+/* --- GLITCH: a state change, brief and never over body text ------------- */
+@keyframes glitch-shift {
+  0% { transform: translate3d(0, 0, 0); }
+  20% { transform: translate3d(-1px, 0, 0); }
+  40% { transform: translate3d(1px, 0, 0); }
+  60% { transform: translate3d(-1px, 0, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+/* Deliberately scoped to labels and chrome. There is no `.glitch` for prose,
+   because a heading a reader cannot finish is a defect, not an effect. */
+.glitch-once {
+  animation: glitch-shift 180ms var(--ease-precise);
+}
+
+/* --- ROUTE: the frame changes, the world does not ----------------------- */
+@keyframes signal-drop {
+  0% { filter: none; }
+  40% { filter: brightness(0.82) saturate(0.7); }
+  100% { filter: none; }
+}
+
+.route-drop {
+  animation: signal-drop 200ms var(--ease-precise);
+}
+
+/* ============================================================
+   Reduced motion
+
+   The gate is the attribute, not the media query. MotionProvider resolves the
+   OS preference and any explicit override into data-motion, so CSS and JS read
+   the same single source of truth and cannot disagree. The media query below
+   is the pre-hydration fallback only.
+   ============================================================ */
 
 :root[data-motion="reduced"] {
   scroll-behavior: auto;
@@ -513,6 +459,12 @@ body {
   transform: none;
 }
 
+/* Decorative atmosphere is removed outright rather than slowed down. */
+:root[data-motion="reduced"] .scan,
+:root[data-motion="reduced"] .scanline {
+  display: none;
+}
+
 /* Before hydration resolves data-motion, honour the OS directly. */
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion]) {
@@ -528,7 +480,49 @@ body {
 }
 
 /* ============================================================
+   Forced colors
+
+   Windows High Contrast replaces the palette wholesale. Everything this system
+   builds from hairlines and surface deltas would otherwise vanish, so borders
+   are restated in system colours and pure decoration is removed.
+   ============================================================ */
+
+@media (forced-colors: active) {
+  .panel,
+  .panel-deep,
+  .panel-raised,
+  .chip,
+  .verify,
+  .btn {
+    border: 1px solid CanvasText;
+  }
+
+  .divider,
+  .divider-faint,
+  .divider-segmented,
+  .system-label-rule {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  /* Atmosphere carries no information, so it goes entirely. */
+  .scanline,
+  .vignette,
+  .scan,
+  .bracket::before,
+  .bracket::after {
+    display: none;
+  }
+
+  /* The focus ring must survive, and must not be the accent colour. */
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
+
+/* ============================================================
    Print
+
    A portfolio gets printed and PDF'd. Give it a real paper form rather than
    a dark rectangle: ink on white, links resolved, chrome removed.
    ============================================================ */
@@ -559,9 +553,25 @@ body {
     clip-path: none !important;
   }
 
-  /* A scrubbed sequence has no scroll on paper; collapse its track. */
-  [class*="vh]"] {
+  /* A scrubbed sequence has no scroll on paper; collapse its track.
+     Scoped to genuine three-digit track heights so the hero's min-h-[88vh]
+     is left alone. */
+  [class*="h-[3"][class*="vh]"],
+  [class*="h-[4"][class*="vh]"] {
     height: auto !important;
+  }
+
+  .panel,
+  .panel-deep,
+  .panel-raised {
+    background: #fff !important;
+    border-color: #999 !important;
+  }
+
+  .scanline,
+  .vignette,
+  .scan {
+    display: none !important;
   }
 
   figure,

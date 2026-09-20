@@ -1,0 +1,372 @@
+/* ============================================================================
+   SUBSTRATE — TIER 4: COMPONENT RECIPES
+   ============================================================================
+
+   Every recipe reads Tier 2 aliases only. No raw colour appears below this
+   line, and no recipe hard-codes a z-index, a radius or a duration.
+
+   Geometry rules, applied without exception:
+     - maximum radius is var(--radius), which is 2px
+     - depth comes from hairlines and surface delta, never from box-shadow
+     - de-emphasis comes from colour tokens, never from opacity
+
+   That last rule is not stylistic. Phase 2 measured the minimum alpha at which
+   each ink still clears 4.5:1 over --panel: --fg-low needs 0.93. Any fade a
+   reader can actually perceive puts text below AA, so opacity is not available
+   as a de-emphasis mechanism on this palette.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------- PANEL --- */
+
+.panel {
+  background: var(--panel);
+  border: var(--hair-w) solid var(--hair);
+  border-radius: var(--radius);
+}
+
+.panel-deep {
+  background: var(--deep);
+  border: var(--hair-w) solid var(--hair);
+  border-radius: var(--radius);
+}
+
+.panel-raised {
+  background: var(--raised);
+  border: var(--hair-w) solid var(--hair);
+  border-radius: var(--radius);
+}
+
+/* The header strip on an instrument panel: label left, state right. */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: var(--hair-w) solid var(--hair);
+  color: var(--fg-low);
+}
+
+.panel-body {
+  padding: 1.25rem;
+}
+
+/* An inner glow, which is how a surface reads as lit rather than as a box.
+   Cheaper than a shadow and it never spills outside the element. */
+.panel-lit {
+  box-shadow: inset 0 var(--hair-w) 0 0 rgba(232, 237, 244, 0.04);
+}
+
+/* -------------------------------------------------------------- BRACKET --- */
+/* Corner marks rather than a full frame. Reads as a targeting reticle or a
+   technical drawing's crop marks, and costs two pseudo-elements. */
+
+.bracket {
+  position: relative;
+}
+
+.bracket::before,
+.bracket::after {
+  content: "";
+  position: absolute;
+  width: var(--bracket-len);
+  height: var(--bracket-len);
+  border-color: var(--accent);
+  border-style: solid;
+  border-width: 0;
+  pointer-events: none;
+}
+
+.bracket::before {
+  top: calc(var(--hair-w) * -1);
+  left: calc(var(--hair-w) * -1);
+  border-top-width: var(--hair-w);
+  border-left-width: var(--hair-w);
+}
+
+.bracket::after {
+  right: calc(var(--hair-w) * -1);
+  bottom: calc(var(--hair-w) * -1);
+  border-right-width: var(--hair-w);
+  border-bottom-width: var(--hair-w);
+}
+
+.bracket-cold::before,
+.bracket-cold::after {
+  border-color: var(--cold);
+}
+
+/* ---------------------------------------------------------------- NOTCH --- */
+/* A cut corner, for filled elements where no border has to survive the clip. */
+
+.notch {
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--notch)) 0,
+    100% var(--notch),
+    100% 100%,
+    var(--notch) 100%,
+    0 calc(100% - var(--notch))
+  );
+}
+
+/* --------------------------------------------------------- SYSTEM LABEL --- */
+/* The eyebrow above a region. Mono, because it names a part of the system. */
+
+.system-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-low);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.system-label-index {
+  color: var(--accent);
+}
+
+/* The trailing rule that runs off toward the edge of the region. */
+.system-label-rule {
+  flex: 1;
+  max-width: 120px;
+  height: var(--hair-w);
+  background: var(--hair-faint);
+}
+
+/* -------------------------------------------------------------- READOUT --- */
+/* A measured value. Mono and tabular because it came from a machine. */
+
+.readout {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--fg-mid);
+}
+
+.readout-value {
+  color: var(--fg-hi);
+}
+
+.readout-signal {
+  color: var(--accent);
+}
+
+/* Telemetry the system reports about itself is always cold, so that amber
+   always means "the subject" and cold always means "the machine". */
+.readout-system {
+  color: var(--cold);
+}
+
+/* ---------------------------------------------------------------- CHIP --- */
+/* State carried by colour AND shape, so it survives greyscale and print. */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.625rem;
+  border: var(--hair-w) solid currentColor;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-mid);
+}
+
+.chip-signal { color: var(--accent); }
+.chip-safe { color: var(--state-safe); }
+.chip-unsafe { color: var(--state-unsafe); }
+.chip-waiting { color: var(--state-waiting); }
+.chip-cold { color: var(--cold); }
+
+/* ---------------------------------------------------------------- VERIFY --- */
+/* The site's signature interaction. Every claim resolves to its evidence, so
+   this affordance has to look like a control rather than a footnote. */
+
+.verify {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.625rem;
+  border: var(--hair-w) solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--accent);
+  transition:
+    border-color var(--dur-base) var(--ease-precise),
+    background-color var(--dur-base) var(--ease-precise);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .verify:hover {
+    border-color: var(--accent);
+    background: var(--accent-wash);
+  }
+}
+
+/* ------------------------------------------------------------- DATA ROW --- */
+/* A record in a list of records. The hairline is the structure. */
+
+.data-row {
+  display: grid;
+  gap: 0.25rem 1rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: var(--hair-w) solid var(--hair-faint);
+  transition: background-color var(--dur-base) var(--ease-precise);
+}
+
+.data-row:last-child {
+  border-bottom: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .data-row:hover {
+    background: var(--raised);
+  }
+}
+
+/* Marks a row as the subject's own work, against rows that are not. */
+.data-row-mine {
+  border-left: 3px solid var(--accent);
+}
+
+.data-row-other {
+  border-left: 3px solid transparent;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 6px,
+    var(--hair-faint) 6px,
+    var(--hair-faint) 12px
+  );
+}
+
+/* -------------------------------------------------------------- DIVIDER --- */
+
+.divider {
+  height: var(--hair-w);
+  background: var(--hair);
+  border: 0;
+  margin: 0;
+}
+
+.divider-faint {
+  background: var(--hair-faint);
+}
+
+/* A segmented divider, for indicating discrete steps rather than a span. */
+.divider-segmented {
+  height: var(--hair-w);
+  border: 0;
+  margin: 0;
+  background: repeating-linear-gradient(
+    to right,
+    var(--hair) 0 14px,
+    transparent 14px 22px
+  );
+}
+
+/* --------------------------------------------------------------- BUTTON --- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* 24px minimum target, per WCAG 2.2 SC 2.5.8, before padding. */
+  min-height: 2.25rem;
+  padding: 0.625rem 1rem;
+  border: var(--hair-w) solid var(--hair);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-mid);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    color var(--dur-base) var(--ease-precise),
+    border-color var(--dur-base) var(--ease-precise),
+    background-color var(--dur-base) var(--ease-precise);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover {
+    border-color: var(--fg-mid);
+    color: var(--fg-hi);
+  }
+}
+
+.btn-signal {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-signal:hover {
+    background: var(--accent-wash);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+/* The one solid control in the system, reserved for a primary action. */
+.btn-solid {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+/* -------------------------------------------------------------- SCANLINE --- */
+/* Atmosphere, never over reading surfaces. Capped at 3% so it cannot affect
+   the contrast of anything beneath it. Decorative, so aria-hidden at the
+   component level and removed entirely under reduced motion. */
+
+.scanline {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(232, 237, 244, 0.03) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+/* A vignette, which is how the environment reads as lit from within. */
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 90% at 50% 0%,
+    transparent 40%,
+    rgba(5, 7, 10, 0.55) 100%
+  );
+}
+
+/* ----------------------------------------------------------- LIFT / HOVER --- */
+/* 2px, not 8. This is an instrument panel, not a marketing card grid. */
+
+.lift {
+  transition:
+    transform var(--dur-base) var(--ease-out-expo),
+    border-color var(--dur-base) var(--ease-precise),
+    background-color var(--dur-base) var(--ease-precise);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover {
+    transform: translateY(-2px);
+    border-color: var(--hair-strong);
+  }
+}

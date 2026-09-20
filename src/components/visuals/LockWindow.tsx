@@ -17,7 +17,7 @@ export function LockWindow() {
         </span>
         <div className="flex h-8 border border-[var(--hair)]">
           <div
-            className="t-label flex shrink-0 items-center justify-center bg-[var(--accent)] px-2 text-[var(--color-l0)]"
+            className="t-label flex shrink-0 items-center justify-center bg-[var(--accent)] px-2 text-[var(--on-accent)]"
             style={{ flexBasis: "9%" }}
           >
             Held

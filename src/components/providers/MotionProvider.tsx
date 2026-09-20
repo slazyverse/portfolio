@@ -1,8 +1,22 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
+import {
+  getServerSnapshot,
+  getSnapshot,
+  setMotionMode,
+  subscribe,
+  type MotionMode,
+} from "@/lib/motion-store";
 
-export type MotionMode = "full" | "reduced";
+export type { MotionMode };
 
 interface MotionContextValue {
   mode: MotionMode;
@@ -28,71 +42,43 @@ export const useMotionAllowed = () => useContext(MotionContext).mode === "full";
 /**
  * Motion preference, as a first-class setting rather than a hard gate.
  *
- * The OS preference is the default and is always honoured on first visit — a
- * visitor who asked their system for reduced motion gets a still page without
- * doing anything. But it is a *default*, not a verdict: plenty of machines
- * report `prefers-reduced-motion: reduce` because the whole desktop was tuned
- * for performance, not because the person is motion-sensitive. Windows'
- * "Adjust for best performance" does exactly that, and Chrome reports it as a
- * reduced-motion request.
+ * The preference itself lives in `@/lib/motion-store`, because it is genuinely
+ * external state: the OS media query and localStorage both change outside
+ * React, and another tab can change the second one. Phase 2 moved this from a
+ * `useState` filled in by an effect to `useSyncExternalStore`, which removes
+ * the cascading render and makes the server/client boundary explicit rather
+ * than implicit. The context API is unchanged.
  *
- * So the visitor can override it either way, and the choice is remembered.
- * `data-motion` on the document element is the single source of truth — CSS
- * keys off the attribute rather than the media query, so both layers can never
- * disagree.
+ * `data-motion` on the document element remains the single source of truth for
+ * the CSS layer — CSS keys off the attribute rather than the media query, so
+ * the two layers can never disagree about what the visitor asked for.
  *
  * Scope note: this governs entrance reveals, the scrubbed sequences and the
  * hero simulation. Scrolling itself is always native — the site does not
  * intercept it.
  */
 export function MotionProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setMode] = useState<MotionMode>("reduced");
-  const [systemReduced, setSystemReduced] = useState(false);
-  const [overridden, setOverridden] = useState(false);
+  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
+  // Mirror the resolved preference onto the document so CSS reads the same
+  // value. A DOM write, not React state, so it cannot cascade.
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const stored = window.localStorage.getItem("motion");
-    const hasOverride = stored === "full" || stored === "reduced";
-
-    setSystemReduced(mq.matches);
-    setOverridden(hasOverride);
-
-    const resolved: MotionMode = hasOverride
-      ? (stored as MotionMode)
-      : mq.matches
-        ? "reduced"
-        : "full";
-
-    setMode(resolved);
-    document.documentElement.dataset.motion = resolved;
-
-    // Follow the OS if the visitor has not made a choice of their own.
-    const onChange = (e: MediaQueryListEvent) => {
-      setSystemReduced(e.matches);
-      if (window.localStorage.getItem("motion")) return;
-      const next: MotionMode = e.matches ? "reduced" : "full";
-      setMode(next);
-      document.documentElement.dataset.motion = next;
-    };
-
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+    document.documentElement.dataset.motion = state.mode;
+  }, [state.mode]);
 
   const toggle = useCallback(() => {
-    setMode((current) => {
-      const next: MotionMode = current === "full" ? "reduced" : "full";
-      document.documentElement.dataset.motion = next;
-      window.localStorage.setItem("motion", next);
-      setOverridden(true);
-      return next;
-    });
+    setMotionMode(getSnapshot().mode === "full" ? "reduced" : "full");
   }, []);
 
-  return (
-    <MotionContext.Provider value={{ mode, systemReduced, overridden, toggle }}>
-      {children}
-    </MotionContext.Provider>
+  const value = useMemo<MotionContextValue>(
+    () => ({
+      mode: state.mode,
+      systemReduced: state.systemReduced,
+      overridden: state.overridden,
+      toggle,
+    }),
+    [state.mode, state.systemReduced, state.overridden, toggle],
   );
+
+  return <MotionContext.Provider value={value}>{children}</MotionContext.Provider>;
 }

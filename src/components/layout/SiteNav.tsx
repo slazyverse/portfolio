@@ -1,5 +1,4 @@
 import { SITE } from "@/data/site";
-import { ThemeToggle } from "./ThemeToggle";
 import { MotionToggle } from "./MotionToggle";
 
 export function SiteNav() {
@@ -29,7 +28,6 @@ export function SiteNav() {
             GitHub
           </a>
           <MotionToggle />
-          <ThemeToggle />
         </div>
       </div>
     </header>

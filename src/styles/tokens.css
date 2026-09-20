@@ -1,0 +1,135 @@
+/* ============================================================================
+   SUBSTRATE — TIER 1 and TIER 2
+   ============================================================================
+
+   Tier 1 (@theme)  raw design values. Nothing outside this file may use them.
+   Tier 2 (:root)   semantic aliases. Everything else reads only these.
+
+   The tier boundary is load-bearing, not decorative. Phase 1 shipped a bug
+   where four components reached past the alias layer to a raw ramp value, and
+   the theme could not re-ground it — text rendered at 1.07:1. The rule that
+   came out of that: a component never names a raw value.
+
+   Dark only. The light theme was removed in Phase 2; a diegetic system
+   interface with a daylight mode is incoherent, and maintaining two verified
+   palettes doubled the contrast surface for no gain. Accessibility is served
+   by forced-colors support, the print stylesheet, and a dark palette where
+   every pairing clears AA — see tests/contrast.test.ts.
+   ========================================================================= */
+
+@theme {
+  /* --- Substrate ramp. Deeper index = further down the stack. ------------ */
+  --color-l0: #05070a;
+  --color-l1: #090d13;
+  --color-l2: #0f151e;
+  --color-l3: #161e2a;
+  --color-l4: #222d3d;
+
+  /* --- Hairlines. The primary structural device; there are no shadows. --- */
+  --color-rule-faint: rgba(232, 237, 244, 0.06);
+  --color-rule: rgba(232, 237, 244, 0.11);
+  --color-rule-strong: rgba(232, 237, 244, 0.2);
+
+  /* --- Ink. Every step clears 4.5:1 against EVERY surface token, which is
+         asserted by a test that parses this file. ink-low is metadata, but
+         metadata is still text, so it clears AA too. --------------------- */
+  --color-ink-hi: #e9eef6;
+  --color-ink: #c3ccd9;
+  --color-ink-mid: #98a5b7;
+  --color-ink-low: #7c8899;
+
+  /* --- Signal. Amber is the identity and it is deliberately the only warm
+         value in the system. The cyan/magenta palette is the genre default
+         and would make this look like every other cyberpunk portfolio. ---- */
+  --color-signal: #ff9e2c;
+  --color-signal-dim: #b86c14;
+  --color-signal-wash: rgba(255, 158, 44, 0.1);
+
+  /* --- Cold secondary. Used ONLY for system/telemetry readouts, so that
+         amber always means "this is the subject" and cold always means
+         "this is the machine talking about itself". Never decorative. ----- */
+  --color-cold: #7fb4cf;
+  --color-cold-dim: #4d7d95;
+  --color-cold-wash: rgba(127, 180, 207, 0.1);
+
+  /* --- Semantic states. Only where the system has a real state. ---------- */
+  --color-safe: #3ddc91;
+  --color-unsafe: #ff5a5a;
+  --color-waiting: #6fa8ff;
+
+  /* --- Type ------------------------------------------------------------- */
+  --font-sans: var(--font-archivo), "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* --- Motion curves. Mirrored in src/lib/motion.ts so the CSS and JS
+         layers cannot drift. Instrument easing: these decelerate and stop,
+         with no overshoot, bounce or elastic. --------------------------- */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-precise: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root {
+  /* ======================= TIER 2 — SEMANTIC ALIASES ====================== */
+
+  /* --- Surfaces, shallow to deep --------------------------------------- */
+  --edge: var(--color-l4);
+  --raised: var(--color-l3);
+  --panel: var(--color-l2);
+  --ground: var(--color-l1);
+  --deep: var(--color-l0);
+
+  /* --- Structure -------------------------------------------------------- */
+  --hair-faint: var(--color-rule-faint);
+  --hair: var(--color-rule);
+  --hair-strong: var(--color-rule-strong);
+
+  /* --- Ink -------------------------------------------------------------- */
+  --fg-hi: var(--color-ink-hi);
+  --fg: var(--color-ink);
+  --fg-mid: var(--color-ink-mid);
+  --fg-low: var(--color-ink-low);
+
+  /* --- Signal ----------------------------------------------------------- */
+  --accent: var(--color-signal);
+  --accent-dim: var(--color-signal-dim);
+  --accent-wash: var(--color-signal-wash);
+  /* The correct foreground for text sitting ON --accent. Carries the skip
+     link, which must clear AA. */
+  --on-accent: var(--color-l0);
+
+  --cold: var(--color-cold);
+  --cold-dim: var(--color-cold-dim);
+  --cold-wash: var(--color-cold-wash);
+
+  --state-safe: var(--color-safe);
+  --state-unsafe: var(--color-unsafe);
+  --state-waiting: var(--color-waiting);
+
+  /* --- Geometry. Maximum radius is 2px, everywhere, permanently. Depth
+         comes from border hierarchy and surface delta, never from shadow. -- */
+  --radius: 2px;
+  --hair-w: 1px;
+  --notch: 10px;
+  --bracket-len: 12px;
+  --rail-w: 72px;
+  --measure: 68ch;
+
+  /* --- Motion ----------------------------------------------------------- */
+  --dur-fast: 160ms;
+  --dur-base: 320ms;
+  --dur-slow: 640ms;
+  --dur-cinematic: 1200ms;
+
+  /* --- Z-index. Named, ordered, and the only place these numbers appear.
+         An arbitrary z-index anywhere else is a bug. --------------------- */
+  --z-base: 0;
+  --z-content: 10;
+  --z-chrome: 30;
+  --z-rail: 40;
+  --z-overlay: 60;
+  --z-palette: 80;
+  --z-skip: 100;
+
+  color-scheme: dark;
+}

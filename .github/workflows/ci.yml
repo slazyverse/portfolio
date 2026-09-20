@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'substrate/**']
+  pull_request:
+    branches: [main]
+  # The evidence suite depends on external repositories that can change without
+  # anything in this one changing, so it also runs on a schedule.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: types · lint · unit · build · budget
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 ships npm 11, which is what generates this lockfile.
+          # Node 22 ships npm 10, and npm 10 rejects an npm 11 lockfile with
+          # ECOMPROMISED "Lock compromised" in about a second — which is
+          # exactly how every CI run had been failing, since Phase 1.
+          node-version: 24
+          cache: npm
+
+      # npm ci, with retries for transport failures only.
+      #
+      # This retries; it does not swallow. A real defect fails identically on
+      # all three attempts and still fails the job.
+      #
+      # On failure, the tail of npm's own output is emitted as a workflow
+      # annotation. Actions logs require authentication to read and annotations
+      # do not, which is what makes a CI-only failure diagnosable at all.
+      - name: Install
+        run: |
+          for attempt in 1 2 3; do
+            npm ci > /tmp/npm-ci.log 2>&1 && exit 0
+            echo "attempt $attempt/3 failed"
+            tail -n 40 /tmp/npm-ci.log
+            sleep $((attempt * 10))
+          done
+          echo "::error title=npm ci failed::$(tail -n 25 /tmp/npm-ci.log | tr '\n' '~')"
+          exit 1
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit and data-integrity tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Performance budget
+        run: npm run budget
+
+      - name: No known vulnerabilities
+        run: npm audit --audit-level=high
+
+  a11y:
+    name: accessibility
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 ships npm 11, which is what generates this lockfile.
+          # Node 22 ships npm 10, and npm 10 rejects an npm 11 lockfile with
+          # ECOMPROMISED "Lock compromised" in about a second — which is
+          # exactly how every CI run had been failing, since Phase 1.
+          node-version: 24
+          cache: npm
+      # npm ci, with retries for transport failures only.
+      #
+      # This retries; it does not swallow. A real defect fails identically on
+      # all three attempts and still fails the job.
+      #
+      # On failure, the tail of npm's own output is emitted as a workflow
+      # annotation. Actions logs require authentication to read and annotations
+      # do not, which is what makes a CI-only failure diagnosable at all.
+      - name: Install
+        run: |
+          for attempt in 1 2 3; do
+            npm ci > /tmp/npm-ci.log 2>&1 && exit 0
+            echo "attempt $attempt/3 failed"
+            tail -n 40 /tmp/npm-ci.log
+            sleep $((attempt * 10))
+          done
+          echo "::error title=npm ci failed::$(tail -n 25 /tmp/npm-ci.log | tr '\n' '~')"
+          exit 1
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: axe + structural a11y (desktop and mobile)
+        run: npm run test:a11y
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  evidence:
+    name: evidence still resolves
+    runs-on: ubuntu-latest
+    # Never blocks a merge: these assertions depend on other repositories being
+    # reachable, so a GitHub outage must not fail an unrelated pull request.
+    # It is a monitor, not a gate.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 ships npm 11, which is what generates this lockfile.
+          # Node 22 ships npm 10, and npm 10 rejects an npm 11 lockfile with
+          # ECOMPROMISED "Lock compromised" in about a second — which is
+          # exactly how every CI run had been failing, since Phase 1.
+          node-version: 24
+          cache: npm
+      # npm ci, with retries for transport failures only.
+      #
+      # This retries; it does not swallow. A real defect fails identically on
+      # all three attempts and still fails the job.
+      #
+      # On failure, the tail of npm's own output is emitted as a workflow
+      # annotation. Actions logs require authentication to read and annotations
+      # do not, which is what makes a CI-only failure diagnosable at all.
+      - name: Install
+        run: |
+          for attempt in 1 2 3; do
+            npm ci > /tmp/npm-ci.log 2>&1 && exit 0
+            echo "attempt $attempt/3 failed"
+            tail -n 40 /tmp/npm-ci.log
+            sleep $((attempt * 10))
+          done
+          echo "::error title=npm ci failed::$(tail -n 25 /tmp/npm-ci.log | tr '\n' '~')"
+          exit 1
+      - name: Every cited source resolves and every excerpt is verbatim
+        run: npm run test:evidence
