@@ -209,3 +209,39 @@ export const LEVEL_ORDER: readonly StratumId[] = [
 export function levelIndex(level: StratumId): string {
   return String(LEVEL_ORDER.indexOf(level)).padStart(2, "0");
 }
+
+/** Human name for a level, for readouts and labels. */
+export const LEVEL_NAME: Record<StratumId, string> = {
+  surface: "Surface",
+  interface: "Interface",
+  engine: "Engine",
+  substrate: "Substrate",
+};
+
+/**
+ * The route a level takes you to.
+ *
+ * Derived from the route table rather than hard-coded, so adding a route at a
+ * level cannot leave the rail pointing somewhere stale. The first navigable
+ * route at a level is its entry point.
+ */
+export function routeForLevel(level: StratumId): RouteMeta {
+  const match = NAV_ROUTES.find((r) => r.level === level);
+  if (!match) {
+    throw new Error(`No navigable route exists at level: ${level}`);
+  }
+  return match;
+}
+
+/**
+ * Resolves a pathname to its route record.
+ *
+ * Contract pages resolve to the dynamic `contract` route, because that is what
+ * they are — the chrome gets the level from the contract itself.
+ */
+export function routeForPath(pathname: string): RouteMeta | undefined {
+  if (pathname.startsWith("/contracts/")) {
+    return ROUTES.find((r) => r.id === "contract");
+  }
+  return ROUTES.find((r) => r.path === pathname);
+}

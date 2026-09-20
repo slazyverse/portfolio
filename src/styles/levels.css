@@ -94,11 +94,10 @@ body {
 :root[data-level="engine"] body { background-color: #05080d; }
 :root[data-level="substrate"] body { background-color: #04060a; }
 
-/* Retained so the existing DepthRail keeps working until Phase 4 replaces it
-   with SystemChrome. Same four steps, previous attribute name. */
-:root[data-stratum="1"] body { background-color: #070a10; }
-:root[data-stratum="2"] body { background-color: #05080d; }
-:root[data-stratum="3"] body { background-color: #04060a; }
+/* The `data-stratum` compatibility shim is gone with Phase 4. DepthRail was
+   the only thing that wrote that attribute, and SystemChrome replaced it —
+   keeping two navigation systems that could disagree about where the visitor
+   is would have been worse than either alone. */
 
 /* A section that declares its level adopts that level's rhythm. */
 section[data-level] {

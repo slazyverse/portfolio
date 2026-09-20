@@ -123,11 +123,138 @@ test.describe("routing", () => {
     await expect(announcer).toContainText(/navigated to profile/i);
   });
 
-  test("the current route is marked in the navigation", async ({ page }) => {
+  test("the current level is marked in the rail", async ({ page }) => {
     await page.goto("/contracts");
-    const current = page.locator('nav[aria-label="Primary"] a[aria-current="page"]');
+    const current = page.locator('nav[aria-label="Levels"] a[aria-current="true"]');
     await expect(current).toHaveCount(1);
-    await expect(current).toContainText("CONTRACTS");
+    await expect(current).toContainText(/engine/i);
+  });
+});
+
+/**
+ * SystemChrome — the persistent interface layer.
+ *
+ * The properties asserted here are the ones that make it a system rather than
+ * a header: that it survives navigation, that it always knows which level the
+ * visitor is on, and that every part of it can be driven without a pointer.
+ */
+test.describe("system chrome", () => {
+  test("every level in the rail resolves to a real route", async ({ page }) => {
+    await page.goto("/");
+    const hrefs = await page.$$eval('nav[aria-label="Levels"] a', (els) =>
+      els.map((e) => e.getAttribute("href") ?? ""),
+    );
+    expect(hrefs).toHaveLength(4);
+    for (const href of hrefs) {
+      const res = await page.request.get(href);
+      expect(res.status(), `${href} from the level rail`).toBe(200);
+    }
+  });
+
+  test("the status bar reports the current level, and it updates on navigation", async ({ page }) => {
+    await page.goto("/");
+    const bar = page.locator("header").first();
+    await expect(bar).toContainText("SUBSTRATE");
+    await expect(bar).toContainText("00");
+
+    await page.goto("/contracts");
+    await expect(bar).toContainText("02");
+
+    // A contract reports its own designation, from project data.
+    await page.goto("/contracts/apix");
+    await expect(bar).toContainText("CONTRACT 02");
+  });
+
+  test("deadlockd reports substrate, not engine", async ({ page }) => {
+    // Contracts take their level from the contract, not the route table:
+    // deadlockd is substrate work and the other two are engine work.
+    await page.goto("/contracts/deadlockd");
+    await expect(page.locator("header").first()).toContainText("03");
+  });
+
+  test("the chrome persists across client navigation without remounting", async ({ page }) => {
+    await page.goto("/");
+    // Tag the live chrome node, navigate, and check the same node is still there.
+    await page.evaluate(() => {
+      document.querySelector("header")?.setAttribute("data-persist-probe", "1");
+    });
+    await page.getByRole("link", { name: /projects/i }).first().click();
+    await page.waitForURL("**/contracts");
+    await expect(page.locator("header[data-persist-probe]")).toHaveCount(1);
+  });
+
+  test("the command palette opens on the keyboard shortcut and navigates", async ({ page }) => {
+    await page.goto("/");
+    await page.keyboard.press("Control+k");
+
+    const dialog = page.getByRole("dialog", { name: "Navigate" });
+    await expect(dialog).toBeVisible();
+
+    await page.keyboard.type("colophon");
+    await page.keyboard.press("Enter");
+    await page.waitForURL("**/colophon");
+    await expect(dialog).toBeHidden();
+  });
+
+  test("the palette closes on Escape and returns focus", async ({ page, viewport }) => {
+    // The visible trigger is desktop-only; on mobile the palette is reached by
+    // the keyboard shortcut, which the previous test already covers.
+    test.skip((viewport?.width ?? 0) < 768, "desktop trigger only");
+    await page.goto("/");
+    const trigger = page.getByRole("button", { name: /open navigation search/i });
+    await trigger.click();
+
+    const dialog = page.getByRole("dialog", { name: "Navigate" });
+    await expect(dialog).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    // Native <dialog> returns focus to the invoker.
+    await expect(trigger).toBeFocused();
+  });
+});
+
+test.describe("system chrome — mobile", () => {
+  test.skip(({ viewport }) => (viewport?.width ?? 0) >= 768, "mobile only");
+
+  test("the drawer opens, lists every route, and closes on Escape", async ({ page }) => {
+    await page.goto("/");
+    const trigger = page.getByRole("button", { name: "Menu" });
+    await trigger.click();
+
+    const drawer = page.getByRole("dialog", { name: "Site navigation" });
+    await expect(drawer).toBeVisible();
+    // Both registers are visible on mobile: there is no hover to reveal the
+    // plain name behind the in-world one.
+    await expect(drawer).toContainText("CONTRACTS");
+    await expect(drawer).toContainText("projects");
+
+    await page.keyboard.press("Escape");
+    await expect(drawer).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
+
+  test("the drawer closes after navigating", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Menu" }).click();
+    const drawer = page.getByRole("dialog", { name: "Site navigation" });
+    await drawer.getByRole("link", { name: /profile/i }).click();
+    await page.waitForURL("**/dossier");
+    await expect(drawer).toBeHidden();
+  });
+
+  test("the mobile bar does not cover the end of the content", async ({ page }) => {
+    await page.goto("/contact");
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    const overlap = await page.evaluate(() => {
+      const bar = document.querySelector('nav[aria-label="Levels and menu"]');
+      const footer = document.querySelector("footer");
+      if (!bar || !footer) return -1;
+      const b = bar.getBoundingClientRect();
+      const f = footer.getBoundingClientRect();
+      return f.bottom - b.top;
+    });
+    expect(overlap, "footer is hidden behind the fixed mobile bar").toBeLessThanOrEqual(0);
   });
 });
 
@@ -166,7 +293,17 @@ test.describe("structure", () => {
     await expect(page.locator("main#main")).toHaveCount(1);
     await expect(page.locator("header")).toHaveCount(1);
     await expect(page.locator("footer")).toHaveCount(1);
-    await expect(page.locator('nav[aria-label="Section navigation"]')).toHaveCount(1);
+    // SystemChrome provides the level navigation: the rail on desktop, the
+    // level-and-menu bar on mobile. Exactly one renders at a time — two
+    // navigation systems that could disagree about where the visitor is would
+    // be worse than either alone, which is why DepthRail was retired rather
+    // than kept alongside.
+    const rail = page.locator('nav[aria-label="Levels"]');
+    const bar = page.locator('nav[aria-label="Levels and menu"]');
+    const visible =
+      (await rail.isVisible().catch(() => false)) ||
+      (await bar.isVisible().catch(() => false));
+    expect(visible, "a level navigation landmark should be visible").toBe(true);
   });
 
   test("every aria-labelledby resolves to a real element", async ({ page }) => {
