@@ -1,9 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, JetBrains_Mono } from "next/font/google";
 import { SITE } from "@/data/site";
-import { SiteNav } from "@/components/layout/SiteNav";
-import { DepthRail } from "@/components/layout/DepthRail";
 import { Footer } from "@/components/layout/Footer";
+import { SystemChrome } from "@/components/chrome/SystemChrome";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { RouteAnnouncer } from "@/components/layout/RouteAnnouncer";
 import "./globals.css";
@@ -152,13 +151,14 @@ export default function RootLayout({
               Client navigation does not reload the document, so without this a
               screen-reader user hears nothing when the route changes. */}
           <RouteAnnouncer />
-          <DepthRail />
 
-          <div className="relative z-[1] md:ml-[var(--rail-w)]">
-            <SiteNav />
+          {/* Mounted in the layout so it persists across navigation: App
+              Router keeps layout components mounted, so the chrome is never
+              remounted and never flashes. */}
+          <SystemChrome>
             <div className="mx-auto max-w-[1180px] px-5 md:px-12">{children}</div>
             <Footer />
-          </div>
+          </SystemChrome>
         </MotionProvider>
       </body>
     </html>

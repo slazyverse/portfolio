@@ -1,4 +1,4 @@
-import type { RouteId } from "@/data/types";
+import type { RouteId, StratumId } from "@/data/types";
 import { levelIndex, route } from "@/data/routes";
 import { cn } from "@/lib/cn";
 
@@ -8,6 +8,16 @@ interface Props {
   display?: string;
   /** Overrides the route's conventional name. */
   conventional?: string;
+  /**
+   * Overrides the route's level.
+   *
+   * Contracts genuinely sit at different depths — deadlockd is substrate work
+   * while the other two are engine work — so a contract page takes its level
+   * from the contract record. Without this the page header and the system
+   * chrome disagree about where the reader is, which is worse than either
+   * being wrong alone.
+   */
+  level?: StratumId;
   /** The page's one-line standfirst. */
   lead?: string;
   children: React.ReactNode;
@@ -37,6 +47,7 @@ export function PageShell({
   routeId,
   display,
   conventional,
+  level,
   lead,
   children,
   className,
@@ -44,12 +55,13 @@ export function PageShell({
   const meta = route(routeId);
   const shownDisplay = display ?? meta.display;
   const shownConventional = conventional ?? meta.conventional;
-  const index = levelIndex(meta.level);
+  const shownLevel = level ?? meta.level;
+  const index = levelIndex(shownLevel);
 
   return (
     <main
       id="main"
-      data-level={meta.level}
+      data-level={shownLevel}
       // No max-width or gutter here: the root layout already provides both,
       // and applying them twice doubles the padding at every breakpoint.
       className={cn("pb-24", className)}
@@ -57,7 +69,7 @@ export function PageShell({
       <header className="border-b border-[var(--hair-faint)] py-12 md:py-16">
         <p className="system-label">
           <span className="system-label-index">{index}</span>
-          <span>{meta.level}</span>
+          <span>{shownLevel}</span>
           <span aria-hidden="true" className="system-label-rule" />
         </p>
 

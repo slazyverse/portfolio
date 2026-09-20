@@ -404,6 +404,109 @@ export default function SystemReference() {
       {/* ---------------------------------------------------------------- */}
       <Section
         index="11"
+        title="System chrome"
+        note="The persistent interface layer, mounted in the root layout so it survives navigation without remounting. It frames the site; it does not become the site — a persistent HUD that pushes content down is a HUD that cost the reader the thing they came for."
+      >
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <Panel>
+            <PanelHead>
+              <span>StatusBar</span>
+              <StatusChip state="cold" className="border-0 px-0">
+                Live above
+              </StatusChip>
+            </PanelHead>
+            <PanelBody>
+              <p className="t-small text-[var(--fg-mid)]">
+                Identity, current level, and where you are. Every value is
+                real — there is deliberately no fabricated CPU, memory or
+                network readout, because a number that looks like data and is
+                not one would undermine the only thing this site is built on.
+              </p>
+            </PanelBody>
+          </Panel>
+
+          <Panel>
+            <PanelHead>
+              <span>LevelRail</span>
+              <StatusChip state="signal" className="border-0 px-0">
+                Desktop
+              </StatusChip>
+            </PanelHead>
+            <PanelBody>
+              <p className="t-small text-[var(--fg-mid)]">
+                What DepthRail became. The old rail tracked scroll on one page
+                and had nowhere to point; with a real route architecture,
+                depth is navigated. Destinations come from the route table, so
+                the rail cannot point somewhere stale.
+              </p>
+            </PanelBody>
+          </Panel>
+
+          <Panel>
+            <PanelHead>
+              <span>MobileBar</span>
+              <StatusChip state="waiting" className="border-0 px-0">
+                Touch
+              </StatusChip>
+            </PanelHead>
+            <PanelBody>
+              <p className="t-small text-[var(--fg-mid)]">
+                Not a shrunken rail. Levels sit along the bottom at full tap
+                size; everything else is a native <code className="t-mono">&lt;dialog&gt;</code>{" "}
+                drawer, which gives a focus trap, Escape and focus return
+                correctly and for free.
+              </p>
+            </PanelBody>
+          </Panel>
+        </div>
+
+        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Panel surface="deep">
+            <PanelHead>
+              <span>Navigation states</span>
+            </PanelHead>
+            <PanelBody>
+              <ul className="flex flex-col gap-3">
+                {[
+                  ["Current", "aria-current, signal colour, mark widens to 24px"],
+                  ["Hover", "mark widens, ink lifts to --fg-mid (pointer devices only)"],
+                  ["Focus", "2px accent outline at 3px offset, never removed"],
+                  ["Target size", "44px in the rail, 48px on the mobile bar"],
+                ].map(([state, detail]) => (
+                  <li key={state} className="flex flex-wrap items-baseline gap-x-4">
+                    <span className="t-label w-[10ch] shrink-0 text-[var(--accent)]">
+                      {state}
+                    </span>
+                    <span className="t-small text-[var(--fg-mid)]">{detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </PanelBody>
+          </Panel>
+
+          <Panel surface="deep">
+            <PanelHead>
+              <span>Reduced motion</span>
+            </PanelHead>
+            <PanelBody>
+              <p className="t-small text-[var(--fg-mid)]">
+                The chrome holds its stable state: no animated rail, no scan,
+                no glitch, no decorative transition. Navigation itself is
+                untouched — a visitor who asked for less motion asked for less
+                motion, not for a interface that stops working.
+              </p>
+              <p className="t-small mt-4 text-[var(--fg-low)]">
+                The command palette is an accelerator, never a gate. Everything
+                it reaches is reachable from the visible navigation, and
+                nothing depends on knowing the shortcut.
+              </p>
+            </PanelBody>
+          </Panel>
+        </div>
+      </Section>
+
+      <Section
+        index="12"
         title="Quality tiers"
         note="A contract, not a suggestion. Phase 2 defines what each tier may spend; Phase 5 is where the environment layer consumes it. Reduced motion is orthogonal rather than a fourth tier — it removes decorative movement at any tier."
       >

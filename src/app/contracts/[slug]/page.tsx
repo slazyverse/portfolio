@@ -86,6 +86,7 @@ export default async function ContractPage({ params }: Params) {
       routeId="contract"
       display={contract.designation}
       conventional={contract.name}
+      level={contract.level}
       lead={contract.tagline}
     >
       <PageSection title="Identification" index="01">

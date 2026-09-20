@@ -1,3 +1,4 @@
+import { contractIndexBySlug } from "./contract-index";
 import { DEADLOCKD, VAYU, VAYU_LAYERS } from "./projects";
 import type { Contract } from "./types";
 
@@ -23,10 +24,8 @@ const APIX_REPO = "https://github.com/Rexy-5097/apix";
 
 export const CONTRACT_DEADLOCKD: Contract = {
   ...DEADLOCKD,
-  designation: "CONTRACT 01",
-  // The deepest of the three: this work is about a mutex and the order in
-  // which processes are allowed to finish.
-  level: "substrate",
+  designation: contractIndexBySlug("deadlockd")!.designation,
+  level: contractIndexBySlug("deadlockd")!.level,
   role: "Sole author — engine, WebSocket bridge and client",
   objective: {
     problem:
@@ -101,8 +100,8 @@ export const CONTRACT_APIX: Contract = {
     "A quality-adjusted airfare price index for India, and the auditable pipeline that produces it.",
   state: "in-progress",
   ownership: "Team of three — acquisition and ingestion layer mine",
-  designation: "CONTRACT 02",
-  level: "engine",
+  designation: contractIndexBySlug("apix")!.designation,
+  level: contractIndexBySlug("apix")!.level,
   repoUrl: APIX_REPO,
   role: "Data acquisition, ingestion, and the analysis tooling that verifies it",
   meta: [
@@ -217,8 +216,8 @@ export const CONTRACT_APIX: Contract = {
 
 export const CONTRACT_VAYU: Contract = {
   ...VAYU,
-  designation: "CONTRACT 03",
-  level: "engine",
+  designation: contractIndexBySlug("vayu-drishti")!.designation,
+  level: contractIndexBySlug("vayu-drishti")!.level,
   role: "Platform layer — API, data layer, observability, container environment",
   objective: {
     problem:
