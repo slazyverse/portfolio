@@ -72,6 +72,23 @@ body {
   transition: background-color var(--dur-cinematic) var(--ease-precise);
 }
 
+/* A 1.2s full-viewport colour fade is ambient motion, and reduced motion is
+   exactly the request not to see it. Suppressed outright rather than shortened.
+
+   Deliberately narrow: Phase 2 established that hover feedback keeps its
+   colour transition under reduced motion, because a page whose controls stop
+   responding reads as broken. Transforms and page-level atmosphere go; a
+   control acknowledging a pointer stays. */
+:root[data-motion="reduced"] body {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion]) body {
+    transition: none;
+  }
+}
+
 :root[data-level="surface"] body { background-color: var(--color-l1); }
 :root[data-level="interface"] body { background-color: #070a10; }
 :root[data-level="engine"] body { background-color: #05080d; }

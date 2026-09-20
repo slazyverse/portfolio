@@ -5,6 +5,7 @@ import { SiteNav } from "@/components/layout/SiteNav";
 import { DepthRail } from "@/components/layout/DepthRail";
 import { Footer } from "@/components/layout/Footer";
 import { MotionProvider } from "@/components/providers/MotionProvider";
+import { RouteAnnouncer } from "@/components/layout/RouteAnnouncer";
 import "./globals.css";
 
 /**
@@ -147,6 +148,10 @@ export default function RootLayout({
         </a>
 
         <MotionProvider>
+          {/* Announces route changes and moves focus to the main region.
+              Client navigation does not reload the document, so without this a
+              screen-reader user hears nothing when the route changes. */}
+          <RouteAnnouncer />
           <DepthRail />
 
           <div className="relative z-[1] md:ml-[var(--rail-w)]">
