@@ -268,3 +268,130 @@ Items 4 and 1 would give the largest return next, in that order.
 5. **Context loss is one-way.** `webglcontextrestored` is not handled.
 6. **`aria-live` on a perpetual timer** in `AllocationGraph`, carried since
    Phase 1.
+
+
+---
+
+# Phase 5B — art-direction pass
+
+The engine from Phase 5 is unchanged. What changed is what it builds.
+
+Full art direction in [city-world.md](city-world.md); this section records the
+engineering and the mistakes.
+
+## The world now has a social structure
+
+Every building carries a **district** — corporate, commercial, residential,
+industrial, undercity — assigned by distance from the central shaft rather than
+by chance. Maintenance standard, signage density, storefronts, exposed services,
+balconies and street clutter all fall out of that one field, so inequality is a
+placement rule rather than a mood. Buildings over 34 m also carry an **owner**,
+one of five invented corporations, chosen by district.
+
+Nothing in the composer decides what class a building belongs to. It reads the
+district profile and spends accordingly.
+
+## Architecture
+
+Three new kit pieces, all instanced: `platform` (relief bands, setback shelves,
+balconies), `bridge` (skybridges between genuinely close neighbours), `prop`
+(cabinets, bollards, railings, vents at human scale). Plus a signage hierarchy
+of four tiers, each with a host-size requirement.
+
+Windows became holes rather than rectangles: a shadowed reveal, inset glass, a
+lit sill and a bright mullion, then one of four interior lighting states — full
+pane, blind partly drawn, dim light from deeper in the room, or a partition with
+one side lit. Uniform rectangles were the strongest remaining tell.
+
+Facade repetition is broken by a per-building tint baked into the merged
+geometry — one float3 per vertex, no extra draw call.
+
+## The city is occupied
+
+Traffic, steam and contact shading, all GPU-animated from one time uniform.
+Nothing is simulated: a vehicle's position is a function of time, so the CPU
+writes one uniform per frame.
+
+## The reflection pass is gone
+
+Phase 5 bought a planar reflection from drei. It was a second full render of the
+scene, and when Phase 5B pushed the deferred bundle to **306 KB against a 300 KB
+ceiling**, it was the right thing to lose.
+
+What replaced it is cheaper and reads better: the light that *causes* a
+reflection, painted straight onto the road. On a wet street what you actually
+see is colour bleeding down from every sign, not a mirrored building — and a
+pool of light under a source is one additive quad.
+
+With the reflector gone and drei's `PerspectiveCamera` replaced by a plain
+three.js camera, **the environment has no dependency on drei at all.**
+
+## The budget metric was wrong — twice
+
+Worth recording because the second mistake looked like a fix for the first.
+
+It began as *the largest chunk not in the entry*, which was three.js. That
+cannot see a budget spent in pieces. Phase 5 changed it to *the sum of every
+chunk not in the entry* — which over-corrected badly, because in the App Router
+**every route's** page chunk is absent from the home page's HTML. That sum was
+counting `/system`, `/record`, `/contracts` and the home page's own text
+renderer as though they were the environment. It read 302 KB for an environment
+that is 240.
+
+It now measures the environment: three.js plus the chunks that only load when a
+city is drawn, identified by content markers that survive minification. The full
+deferred figure is still printed underneath, unbudgeted, so nothing hides behind
+the narrower definition.
+
+**This metric was corrected while it was red.** Both figures are in the report.
+
+## Three more bugs the work surfaced
+
+**Masts were sized off footprint depth and rendered fully emissive.** A server
+rack is 2 m wide and 11 m deep, so `max(w, d)` gave the substrate 40-metre masts
+on 5-metre cabinets — and because the mast material was emissive, each drew as a
+solid glowing bar. Masts are sized against host *height* now, they are metal,
+and the obstruction light is a separate one-metre emissive part at the tip.
+
+**Light pools stacked into a flare.** A commercial frontage carries a storefront
+band plus several shop signs, and every one wanted its own additive pool in the
+same square metre of road. Capped at two per building.
+
+**Traffic read as glowing planks.** Streaks up to eleven metres long on three
+elevated lanes, additively blended, at a camera angle where the lane tangent is
+nearly horizontal. Shorter, dimmer, one elevated lane.
+
+## Results
+
+| Metric | Phase 5 | Phase 5B | Budget |
+|---|---:|---:|---:|
+| Initial JS (gz) | 189.9 KB | **190.2 KB** | 200 KB |
+| Lazy environment (gz) | — | **240.0 KB** | 300 KB |
+| All deferred JS (gz) | 299.4 KB | 302.7 KB | not budgeted |
+| CSS (gz) | 10.4 KB | 10.5 KB | 16 KB |
+| Dependencies | 6 | **6** | — |
+| Unit + content tests | 262 | **262** | — |
+| a11y + environment | 106 | **106** | — |
+
+## Honest assessment
+
+Materially better than Phase 5: the city has a social structure that reads
+without copy, windows have depth, the street is occupied, buildings are grounded
+by contact shading, and there is a landmark with a podium complex around it.
+
+Still not photoreal, and the gaps are specific:
+
+1. **Geometry is orthogonal.** Boxes with setbacks, relief bands and balconies.
+   No bevels, no angled massing, no curtain-wall relief.
+2. **The substrate composition is weak.** It reads as a distant industrial
+   skyline rather than an enclosed hall, and the empty floor takes roughly half
+   the frame.
+3. **Four facade textures.** Per-building tint helps; close inspection still
+   finds the repeat.
+4. **No shadow contrast beyond contact shade.** Faces are separated by normals.
+5. **The elevated lane is thin.** One lane of transit does not read as a transit
+   *system*.
+6. **Corporate identity is structural, not graphic.** Marks are declared but
+   signage renders as coloured panels, not as shapes.
+
+Items 2 and 1 give the largest return next.

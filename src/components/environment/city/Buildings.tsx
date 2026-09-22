@@ -58,7 +58,9 @@ function buildMassGeometry(masses: readonly Part[]): THREE.BufferGeometry {
   const positions = new Float32Array(masses.length * srcPos.length);
   const normals = new Float32Array(masses.length * srcNor.length);
   const uvs = new Float32Array(masses.length * srcUv.length);
+  const colors = new Float32Array(masses.length * srcPos.length);
   const indices: number[] = [];
+  const tint = new THREE.Color();
 
   const matrix = new THREE.Matrix4();
   const normalMatrix = new THREE.Matrix3();
@@ -78,6 +80,23 @@ function buildMassGeometry(masses: readonly Part[]): THREE.BufferGeometry {
     normalMatrix.getNormalMatrix(matrix);
 
     const span = { w, h, d };
+
+    /*
+     * Per-building tint, baked into the vertices.
+     *
+     * Four facade textures across a whole city is visible repetition, and the
+     * cheapest cure is not a fifth texture — it is to stop every copy being
+     * the same colour. Wear desaturates and darkens; a small deterministic
+     * hue shift does the rest. One float3 per vertex, no extra draw call, and
+     * the identical-facade tell largely disappears.
+     */
+    const grime = 1 - mass.wear * 0.42;
+    const drift = ((Math.sin(mass.position[0] * 0.37 + mass.position[2] * 0.21) + 1) / 2) * 0.16;
+    tint.setRGB(
+      grime * (0.9 + drift * 0.6),
+      grime * (0.93 + drift * 0.3),
+      grime * (1.0 + drift * 0.1),
+    );
 
     for (let i = 0; i < vertCount; i += 1) {
       const o = m * srcPos.length + i * 3;
@@ -100,6 +119,10 @@ function buildMassGeometry(masses: readonly Part[]): THREE.BufferGeometry {
       const uo = m * srcUv.length + i * 2;
       uvs[uo] = srcUv[i * 2]! * (span[face[0]] / FACADE_TILE.width);
       uvs[uo + 1] = srcUv[i * 2 + 1]! * (span[face[1]] / FACADE_TILE.height);
+
+      colors[o] = tint.r;
+      colors[o + 1] = tint.g;
+      colors[o + 2] = tint.b;
     }
 
     for (const index of srcIdx) indices.push(index + m * vertCount);
@@ -111,6 +134,7 @@ function buildMassGeometry(masses: readonly Part[]): THREE.BufferGeometry {
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   geometry.setIndex(indices);
   geometry.computeBoundingSphere();
   return geometry;
@@ -160,6 +184,7 @@ export function Masses({
               // White. The map is the albedo; tinting it by a near-black
               // interface token was what made these render as silhouettes.
               color={0xffffff}
+              vertexColors
               roughnessMap={textures.grime}
               roughness={0.82}
               metalness={0.12}
@@ -217,7 +242,7 @@ function kitSpecs(): KitSpec[] {
       roughness: 0.6,
       metalness: 0.8,
       tint: (p) => p.metal,
-      emissive: true,
+      emissive: false,
     },
     {
       kind: "pipe",
@@ -234,6 +259,38 @@ function kitSpecs(): KitSpec[] {
       metalness: 0.1,
       tint: (p) => p.structure,
       emissive: true,
+    },
+    {
+      // Floor bands, setback shelves and balconies. Painted steel: smoother
+      // and more specular than concrete, so a relief band catches a highlight
+      // where the wall beside it does not. That contrast is the whole reason
+      // these exist.
+      kind: "platform",
+      geometry: new THREE.BoxGeometry(1, 1, 1),
+      roughness: 0.48,
+      metalness: 0.62,
+      tint: (p) => p.metal,
+      emissive: false,
+    },
+    {
+      // Skybridges. Structural, weathered, and read as silhouette against the
+      // haze more often than as surface.
+      kind: "bridge",
+      geometry: new THREE.BoxGeometry(1, 1, 1),
+      roughness: 0.66,
+      metalness: 0.55,
+      tint: (p) => p.metal,
+      emissive: false,
+    },
+    {
+      // Street furniture. Painted plastic and galvanised box, the scale
+      // reference that makes a 200-metre tower read as 200 metres.
+      kind: "prop",
+      geometry: new THREE.BoxGeometry(1, 1, 1),
+      roughness: 0.82,
+      metalness: 0.2,
+      tint: (p) => p.metal,
+      emissive: false,
     },
   ];
 }

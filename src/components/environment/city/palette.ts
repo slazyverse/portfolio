@@ -160,7 +160,7 @@ export function lightRig(level: StratumId, palette: Palette): LightRig {
         ambient: { colour: "#4e7183", intensity: 1.15 },
         key: { colour: "#a9cfe2", intensity: 1.4, position: [40, 120, 60] },
         rim: { colour: "#6f9fb8", intensity: 0.9, position: [-120, 40, -80] },
-        fog: [16, 190],
+        fog: [12, 120],
       };
   }
 }

@@ -499,11 +499,17 @@ describe("the environment is never required to reach content", () => {
     // renders in WebGL, which is unreadable and unindexable.
     for (const level of city.levels) {
       for (const s of level.structures) {
-        expect(Object.keys(s).sort()).toEqual(
+        // A fixed set of geometric fields, plus `owner`, which is present
+        // only on buildings a corporation has put its name to. The point of
+        // the assertion is that none of them is prose: the city holds
+        // geometry and identity keys, never content.
+        const keys = Object.keys(s).sort();
+        expect(keys).toEqual(
           [
             "id",
             "kind",
             "level",
+            "district",
             "position",
             "rotation",
             "signal",
@@ -512,6 +518,9 @@ describe("the environment is never required to reach content", () => {
             "variant",
             "wear",
             "parts",
+            // Always present, and `undefined` on a building nobody has put a
+            // name to — an absent owner is still a fact about the building.
+            "owner",
           ].sort(),
         );
       }

@@ -239,26 +239,71 @@ function drawFacade(
       const ww = bayW * 0.64;
       const wh = floorH * 0.6;
 
-      // Recessed dark glass in the albedo, always.
+      /*
+       * A window is a hole, not a rectangle.
+       *
+       * The previous pass painted flat dark glass with one highlight, and the
+       * facades read as printed. A real opening has a reveal — the wall is
+       * thick, so the head and one jamb fall into shadow while the sill
+       * catches light from below. Four fills per window buys a depth cue that
+       * no amount of lighting on a flat surface can produce.
+       */
+      const reveal = Math.max(1, Math.min(ww, wh) * 0.16);
+
+      // The shadowed reveal: head and the jamb away from the key.
+      albedo.fillStyle = "rgba(0,0,0,0.55)";
+      albedo.fillRect(wx - reveal * 0.5, wy - reveal * 0.5, ww + reveal, wh + reveal);
+
+      // The glass itself, inset inside the reveal.
       albedo.fillStyle = glass;
       albedo.fillRect(wx, wy, ww, wh);
-      // A bright lip at the head of each opening: the one highlight that
-      // makes a window read as recessed rather than painted on.
-      albedo.fillStyle = "rgba(255,255,255,0.14)";
-      albedo.fillRect(wx, wy, ww, Math.max(1, wh * 0.12));
+
+      // The lit sill, catching bounce from the street below.
+      albedo.fillStyle = "rgba(255,255,255,0.2)";
+      albedo.fillRect(wx - reveal * 0.4, wy + wh, ww + reveal * 0.8, Math.max(1, reveal));
+      // And a thin bright mullion down one side.
+      albedo.fillStyle = "rgba(255,255,255,0.1)";
+      albedo.fillRect(wx + ww, wy, Math.max(1, reveal * 0.5), wh);
 
       if (!rng.chance(density)) continue;
 
-      // Lit: emissive only. The albedo keeps its dark glass, so an unlit
-      // window and a lit one are the same material under the same light.
-      const warmth = rng.range(0.55, 1);
+      /*
+       * Lit windows, with a room behind them.
+       *
+       * Emissive only — the albedo keeps its glass, so a lit and an unlit
+       * window are the same material under the same light. What varies is the
+       * *shape* of the light: a full pane, a strip under a half-drawn blind,
+       * or a dim glow from somewhere deeper in the room. Uniform rectangles
+       * are the single most recognisable tell of a generated facade, and the
+       * fix costs one extra branch.
+       */
+      const warmth = rng.skewed(0.35, 1, 1.4);
       const [r, g, b2] = lightColour;
-      emissive.fillStyle = `rgb(${Math.round(r! * warmth)},${Math.round(
-        g! * warmth,
-      )},${Math.round(b2! * warmth)})`;
-      // Blinds and partitions: a lit window is rarely a full clean rectangle.
-      const inset = rng.chance(0.4) ? rng.range(0.1, 0.45) : 0;
-      emissive.fillRect(wx, wy + wh * inset, ww, wh * (1 - inset));
+      const paint = (scale: number) => {
+        emissive.fillStyle = `rgb(${Math.round(r! * warmth * scale)},${Math.round(
+          g! * warmth * scale,
+        )},${Math.round(b2! * warmth * scale)})`;
+      };
+
+      const style = rng.next();
+      if (style < 0.42) {
+        // Fully lit pane.
+        paint(1);
+        emissive.fillRect(wx, wy, ww, wh);
+      } else if (style < 0.72) {
+        // Blind down to part of the opening.
+        const inset = rng.range(0.2, 0.62);
+        paint(1);
+        emissive.fillRect(wx, wy + wh * inset, ww, wh * (1 - inset));
+      } else if (style < 0.9) {
+        // Light from deeper in the room: dimmer, and not reaching the edges.
+        paint(0.45);
+        emissive.fillRect(wx + ww * 0.12, wy + wh * 0.1, ww * 0.76, wh * 0.8);
+      } else {
+        // A partition splitting the opening — two offices, one lit.
+        paint(1);
+        emissive.fillRect(wx, wy, ww * rng.range(0.35, 0.6), wh);
+      }
     }
   }
 

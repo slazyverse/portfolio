@@ -1,3 +1,4 @@
+import type { DistrictId } from "@/data/city-identity";
 import type { RouteId, StratumId } from "@/data/types";
 
 /**
@@ -44,7 +45,13 @@ export type PartKind =
   /** Emissive signage panel. */
   | "sign"
   /** Service pipework running up a flank. */
-  | "pipe";
+  | "pipe"
+  /** Horizontal relief: floor bands, setback shelves, balconies. */
+  | "platform"
+  /** A skybridge between two neighbours. */
+  | "bridge"
+  /** Human-scale street furniture: cabinets, bollards, railings, vents. */
+  | "prop";
 
 export interface Part {
   kind: PartKind;
@@ -90,6 +97,16 @@ export interface Structure {
   /** Yaw in radians. Small, deliberate: a city is not perfectly aligned. */
   rotation: number;
   signal: Signal;
+  /**
+   * Which district this building stands in.
+   *
+   * The single field that carries class. Maintenance, signage density,
+   * storefronts, exposed services, balconies and clutter all fall out of it,
+   * which is how the world communicates inequality without a word of copy.
+   */
+  district: DistrictId;
+  /** The corporation that has put its name on this, where one has. */
+  owner?: string;
   detail: DetailTier;
   /** Facade atlas cell for the building's main masses. */
   variant: number;

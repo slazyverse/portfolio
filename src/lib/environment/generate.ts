@@ -1,3 +1,10 @@
+import {
+  CORPORATIONS,
+  DISTRICTS,
+  LEVEL_DISTRICTS,
+  type Corporation,
+  type DistrictId,
+} from "@/data/city-identity";
 import { ANCHOR_SPECS, CITY_SEED } from "@/data/environment";
 import { LEVEL_ORDER, levelIndex, route } from "@/data/routes";
 import type { StratumId } from "@/data/types";
@@ -8,6 +15,7 @@ import { createRng, type Rng } from "./seed";
 import type {
   City,
   Conduit,
+  Part,
   EnvironmentAnchor,
   LevelEnvironment,
   LightCell,
@@ -526,6 +534,105 @@ function skyline(rng: Rng, level: StratumId, count: number): SkylineShape[] {
 }
 
 /**
+ * Which district a building stands in.
+ *
+ * Distance from the central shaft, not chance. The expensive, controlled
+ * ground is nearest the core and everything else is pushed outward — so a
+ * premium tower and a patched residential stack end up in the same frame,
+ * which is the high-tech-over-low-life contrast stated as geometry.
+ */
+function districtFor(level: StratumId, x: number, z: number): DistrictId {
+  const { core, edge } = LEVEL_DISTRICTS[level];
+  const radius = Math.hypot(x, z);
+  const coreEdge = VOID_RADIUS + (SPAN / 2 - VOID_RADIUS) * 0.42;
+  return radius <= coreEdge ? core : edge;
+}
+
+/**
+ * Who owns it.
+ *
+ * Only buildings large enough to be worth signing get an owner, and the
+ * corporation is chosen by the district rather than at random — infrastructure
+ * belongs to the power company, residential stacks to the housing trust. That
+ * is what makes the signage read as ownership instead of as decoration.
+ */
+function ownerFor(rng: Rng, district: DistrictId, height: number): Corporation | undefined {
+  if (height < 34) return undefined;
+  if (!rng.chance(district === "corporate" ? 0.85 : 0.35)) return undefined;
+
+  const preferred: Record<DistrictId, readonly string[]> = {
+    corporate: ["allocation", "vantage", "meridian"],
+    commercial: ["meridian", "keelson"],
+    residential: ["keelson", "meridian"],
+    industrial: ["corrigan", "allocation"],
+    undercity: ["vantage", "corrigan"],
+  };
+  const ids = preferred[district];
+  const id = rng.pick(ids);
+  return CORPORATIONS.find((c) => c.id === id);
+}
+
+/**
+ * Skybridges.
+ *
+ * Structures crossing between buildings are the clearest single signal of
+ * architectural chaos that is still art-directed: they only exist where two
+ * buildings are genuinely close enough and tall enough to justify one, so the
+ * result is tangled where the city is dense and clean where it is not.
+ *
+ * Generated after placement, because a bridge is a fact about a *pair*.
+ */
+function skybridges(rng: Rng, structures: readonly Structure[], floor: number): Part[] {
+  const out: Part[] = [];
+  const MAX_SPAN = 54;
+
+  for (let i = 0; i < structures.length; i += 1) {
+    const a = structures[i]!;
+    if (a.detail === "far") continue;
+    if (!rng.chance(DISTRICTS[a.district].bridges)) continue;
+
+    // Nearest eligible neighbour, not any neighbour: a bridge to the far side
+    // of the district would read as a mistake.
+    let best: Structure | undefined;
+    let bestDistance = Infinity;
+    for (let j = i + 1; j < structures.length; j += 1) {
+      const b = structures[j]!;
+      const distance = Math.hypot(
+        a.position[0] - b.position[0],
+        a.position[2] - b.position[2],
+      );
+      if (distance < bestDistance && distance > 14 && distance < MAX_SPAN) {
+        best = b;
+        bestDistance = distance;
+      }
+    }
+    if (!best) continue;
+
+    // Somewhere both buildings actually reach.
+    const ceiling = Math.min(a.size[1], best.size[1]);
+    if (ceiling < 26) continue;
+    const y = floor + rng.range(ceiling * 0.35, ceiling * 0.8);
+
+    const mx = (a.position[0] + best.position[0]) / 2;
+    const mz = (a.position[2] + best.position[2]) / 2;
+    const angle = Math.atan2(best.position[2] - a.position[2], best.position[0] - a.position[0]);
+
+    out.push({
+      kind: "bridge",
+      position: [mx, y, mz] as const,
+      size: [bestDistance, rng.range(2.4, 4.6), rng.range(3, 6.5)] as const,
+      rotation: -angle,
+      signal: "cold",
+      variant: 0,
+      wear: a.wear,
+      emissive: 0,
+    });
+  }
+
+  return out;
+}
+
+/**
  * The landmark.
  *
  * A generated city with no hero is a texture: everything is equally
@@ -555,17 +662,25 @@ function heroFor(level: StratumId, seed: string): Structure | null {
   // without leaving it.
   const distance = 150;
 
+  const rng = createRng(`${seed}:hero`);
   return composeBuilding({
-    rng: createRng(`${seed}:hero`),
+    rng,
     level,
     archetype: "tower",
     detail: "hero",
+    district: "corporate",
+    // The city's largest structure belongs to the company whose name the
+    // deepest level already carries.
+    owner: CORPORATIONS.find((c) => c.id === "vantage"),
     position: [cx + Math.cos(bearing) * distance, levelFloor(level), cz + Math.sin(bearing) * distance] as const,
-    width: 46,
-    depth: 41,
+    // Wider than anything the grid can produce, so it reads as a landmark in
+    // plan as well as in elevation. A tower that is merely taller is a tall
+    // tower; a landmark is a different kind of object.
+    width: 62,
+    depth: 54,
     // Roughly twice the tallest thing the grid will produce, which is what
     // makes it read as the landmark rather than as another tower.
-    height: 232,
+    height: 268,
     rotation: 0.14,
     signal: "amber",
     lit: true,
@@ -604,25 +719,75 @@ function generateLevel(
       ? w * rng.range(2.4, 3.6)
       : w * rng.range(0.72, 1.32);
     const h = rng.skewed(profile.height[0], profile.height[1], profile.height[2]);
+    const district = districtFor(level, cell.x, cell.z);
     const composed = composeBuilding({
       rng,
       level,
       archetype: profile.rows ? "rack" : rng.pick(profile.kinds),
       detail: detailFor(cell.x, cell.z, camera, budget),
+      district,
+      owner: ownerFor(rng, district, h),
       position: [cell.x, floor, cell.z] as const,
       width: w,
       depth: d,
       height: h,
       // Rows are orderly; everything else is a few degrees off true.
       rotation: profile.rows ? 0 : rng.range(-0.06, 0.06),
-      signal: profile.signal,
-      lit: rng.chance(profile.litShare),
+      signal: DISTRICTS[district].signal,
+      // The district decides how much of a facade burns light overnight. A
+      // corporate tower is lit because nobody is paying attention to the bill.
+      lit: rng.chance(DISTRICTS[district].litShare * profile.litShare * 1.6),
     });
     return { ...composed, id: `${level}-${i}` };
   });
 
   const hero = heroFor(level, seed);
-  if (hero) structures.unshift({ ...hero, id: `${level}-hero` });
+  if (hero) {
+    // The landmark gets a skirt of secondary structures — a plinth of lower
+    // masses around its base. A tower standing alone on a plane reads as a
+    // model; one growing out of its own podium complex reads as a place that
+    // was built around something.
+    const skirtRng = createRng(`${seed}:hero-skirt`);
+    const [hx, , hz] = hero.position;
+    const skirt: Part[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const angle = (i / 7) * Math.PI * 2 + skirtRng.range(-0.3, 0.3);
+      const radius = 46 + skirtRng.range(0, 26);
+      const w = skirtRng.range(14, 30);
+      const h = skirtRng.range(16, 52);
+      skirt.push({
+        kind: "mass",
+        position: [
+          hx + Math.cos(angle) * radius,
+          levelFloor(level) + h / 2,
+          hz + Math.sin(angle) * radius,
+        ] as const,
+        size: [w, h, skirtRng.range(14, 30)] as const,
+        rotation: skirtRng.range(-0.3, 0.3),
+        signal: "cold",
+        variant: skirtRng.int(0, 3),
+        wear: skirtRng.range(0.05, 0.3),
+        emissive: 0,
+      });
+    }
+    structures.unshift({
+      ...hero,
+      id: `${level}-hero`,
+      parts: [...hero.parts, ...skirt],
+    });
+  }
+
+  // Skybridges are a property of pairs, so they are generated once the whole
+  // level is placed and hung on the first structure of the pair.
+  if (!profile.rows && structures.length > 1) {
+    const bridges = skybridges(rng, structures, floor);
+    if (bridges.length > 0) {
+      structures[0] = {
+        ...structures[0]!,
+        parts: [...structures[0]!.parts, ...bridges],
+      };
+    }
+  }
 
   // Count first, then light. The exact candidate total is arithmetic over the
   // structures that already exist, so the probability that hits this level's

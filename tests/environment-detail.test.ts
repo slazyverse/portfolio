@@ -17,7 +17,19 @@ import { ENVIRONMENT_BUDGET, environmentBudget } from "@/lib/environment/quality
  */
 
 const TIERS: QualityTier[] = ["high", "balanced", "low"];
-const KIT_KINDS = ["mass", "fin", "roofUnit", "tank", "mast", "sign", "pipe"];
+const KIT_KINDS = [
+  "mass",
+  "fin",
+  "roofUnit",
+  "tank",
+  "mast",
+  "sign",
+  "pipe",
+  // Phase 5B: relief bands and balconies, skybridges, street furniture.
+  "platform",
+  "bridge",
+  "prop",
+];
 
 describe("buildings are composed, not extruded", () => {
   it("assembles every building from kit pieces", () => {
@@ -88,9 +100,16 @@ describe("buildings are composed, not extruded", () => {
   });
 
   it("puts signage only on buildings large enough to carry it", () => {
+    // Signage, not every emissive part. Obstruction lamps at the top of a
+    // mast share the same instanced mesh — they are a metre of light on a
+    // pole, and a server rack is entitled to one. The rule being tested is
+    // about things a person is meant to read.
+    const isSignage = (p: { kind: string; size: readonly number[] }) =>
+      p.kind === "sign" && Math.max(p.size[0]!, p.size[1]!, p.size[2]!) > 1.2;
+
     for (const level of generateCity("high").levels) {
       for (const s of level.structures) {
-        if (!s.parts.some((p) => p.kind === "sign")) continue;
+        if (!s.parts.some(isSignage)) continue;
         expect(Math.max(s.size[0], s.size[2])).toBeGreaterThanOrEqual(6);
       }
     }
@@ -203,12 +222,15 @@ describe("tiers differ by fidelity, not only by count", () => {
     expect(balanced.skyline).toBeGreaterThan(low.skyline);
   });
 
-  it("buys the expensive reflection pass at the top tier only", () => {
-    // A second full render of the scene: the most expensive thing in the
-    // environment, spent on the hero surface or not at all.
-    expect(ENVIRONMENT_BUDGET.high.reflections).not.toBe(false);
-    expect(ENVIRONMENT_BUDGET.balanced.reflections).toBe(false);
-    expect(ENVIRONMENT_BUDGET.low.reflections).toBe(false);
+  it("spends ground effects at the top tier only", () => {
+    // Phase 5B removed the planar reflection entirely: a second full render of
+    // the scene, for a blurred grey mirror, while what reads as a wet street
+    // is coloured light pooling on it. That is one instanced draw call now and
+    // it is not tier-gated, because it costs almost nothing. What remains
+    // gated is steam, which animates.
+    expect(ENVIRONMENT_BUDGET.high.groundFx).toBe(true);
+    expect(ENVIRONMENT_BUDGET.balanced.groundFx).toBe(false);
+    expect(ENVIRONMENT_BUDGET.low.groundFx).toBe(false);
   });
 
   it("keeps generated texture memory inside a stated budget", () => {

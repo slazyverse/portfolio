@@ -59,45 +59,70 @@ try {
 }
 
 // --- initial JS: exactly the chunks the entry HTML pulls in ---
-const referenced = [...new Set([...html.matchAll(/static\/chunks\/[\w-]+\.js/g)].map((m) => m[0]))];
+const referenced = [
+  ...new Set([...html.matchAll(/static\/chunks\/[\w-]+\.js/g)].map((m) => m[0])),
+];
 const initialJs = referenced.reduce((sum, c) => sum + gzKB(join(NEXT, c)), 0);
 
-/* --- everything held out of the entry -------------------------------------
-   Summed, not sampled.
-
-   This used to report the single largest non-entry chunk, which was the
-   three.js vendor bundle, and called that "lazy WebGL". It was measuring the
-   biggest thing rather than the whole thing: by the end of Phase 5 the largest
-   chunk was 230 KB while the deferred payload across seven chunks was 299 KB.
-   A gate that reports the largest item cannot see a budget being spent in
-   pieces.
-
-   Conservative on purpose — a couple of these chunks are lazy components that
-   are not the environment. A budget that over-counts errs toward optimising
-   sooner, which is the direction this project has chosen every time. */
+/* --- the lazy environment ---------------------------------------------------
+ * This metric has been wrong twice, in opposite directions, and both are worth
+ * recording because the second looked like a fix for the first.
+ *
+ * It began as "the largest chunk not in the entry" — which was three.js — and
+ * called that the lazy WebGL payload. That cannot see a budget being spent in
+ * pieces: the largest chunk stayed at 230 KB while the environment grew around
+ * it.
+ *
+ * So it became "the sum of every chunk not in the entry", which over-corrected
+ * badly. In the App Router *every* route's page chunk is absent from the home
+ * page's HTML, so that sum counted `/system`, `/record`, `/contracts` and the
+ * home page's own text renderer as though they were the environment. It read
+ * 302 KB for an environment that is 240.
+ *
+ * What the budget constrains is the environment: three.js plus the modules
+ * that only load when a city is drawn. So that is what is measured, identified
+ * by content rather than by filename — the renderer's own class name, plus a
+ * material token and a shader attribute from the environment's code, all three
+ * of which survive minification verbatim.
+ *
+ * The full deferred figure is still printed underneath, unbudgeted, so nothing
+ * can hide behind the narrower definition.
+ */
 const allChunks = walk(join(NEXT, "static/chunks")).filter((f) => f.endsWith(".js"));
 const deferredChunks = allChunks
   .filter((f) => !referenced.some((r) => f.endsWith(r.replace("static/chunks/", ""))))
-  .map((f) => ({ f, kb: gzKB(f) }))
+  .map((f) => ({ f, kb: gzKB(f), src: readFileSync(f, "utf8") }))
   .sort((a, b) => b.kb - a.kb);
+
+const ENVIRONMENT_MARKERS = ["WebGLRenderer", "--env-material", "aRadius"];
+const environmentChunks = deferredChunks.filter((c) =>
+  ENVIRONMENT_MARKERS.some((marker) => c.src.includes(marker)),
+);
+const environment = environmentChunks.reduce((sum, c) => sum + c.kb, 0);
 const deferred = deferredChunks.reduce((sum, c) => sum + c.kb, 0);
-const lazy = deferredChunks[0];
+const largest = deferredChunks[0];
 
 // --- CSS ---
-const css = walk(join(NEXT, "static")).filter((f) => f.endsWith(".css"))
+const css = walk(join(NEXT, "static"))
+  .filter((f) => f.endsWith(".css"))
   .reduce((sum, f) => sum + gzKB(f), 0);
 
 // --- preloaded fonts (raw bytes; woff2 is already compressed) ---
-const fontHrefs = [...html.matchAll(/href="([^"]*static\/media\/[^"]+\.woff2)"[^>]*as="font"/g)].map((m) => m[1]);
-const fonts = fontHrefs.reduce((sum, h) => sum + statSync(join(NEXT, h.replace("/_next/", ""))).size / KB, 0);
+const fontHrefs = [
+  ...html.matchAll(/href="([^"]*static\/media\/[^"]+\.woff2)"[^>]*as="font"/g),
+].map((m) => m[1]);
+const fonts = fontHrefs.reduce(
+  (sum, h) => sum + statSync(join(NEXT, h.replace("/_next/", ""))).size / KB,
+  0,
+);
 
 const checks = [
   ["initial JS (gz)", initialJs, BUDGET.initialJs, `${referenced.length} chunks`],
   [
-    "deferred JS (gz)",
-    deferred,
+    "lazy environment (gz)",
+    environment,
     BUDGET.lazyWebgl,
-    `${deferredChunks.length} chunks, largest ${lazy ? lazy.kb.toFixed(1) : 0} KB`,
+    `${environmentChunks.length} chunks, largest ${largest ? largest.kb.toFixed(1) : 0} KB`,
   ],
   ["CSS (gz)", css, BUDGET.css, ""],
   ["fonts preloaded", fonts, BUDGET.fontsPreloaded, `${fontHrefs.length} files`],
@@ -110,7 +135,7 @@ for (const [name, actual, limit, note] of checks) {
   if (!ok) failed += 1;
   const bar = ok ? "PASS" : "FAIL";
   console.log(
-    `  ${bar}  ${name.padEnd(18)} ${actual.toFixed(1).padStart(7)} KB  /  ${String(limit).padStart(3)} KB` +
+    `  ${bar}  ${name.padEnd(22)} ${actual.toFixed(1).padStart(7)} KB  /  ${String(limit).padStart(3)} KB` +
       (note ? `   ${note}` : ""),
   );
 }
@@ -122,6 +147,13 @@ if (threeInEntry) {
   console.log("\n  FAIL  a >150 KB chunk is in the initial HTML — three.js is no longer lazy");
   failed += 1;
 }
+
+// Reported, never budgeted: everything the app defers, across every route.
+// Here so that a growing total cannot hide behind the narrower headline.
+console.log(
+  `\n  ----  all deferred JS  ${deferred.toFixed(1).padStart(7)} KB  /    —      ` +
+    `${deferredChunks.length} chunks, all routes`,
+);
 
 console.log(failed ? `\n${failed} budget breach(es)\n` : "\nAll budgets within limit\n");
 process.exit(failed ? 1 : 0);

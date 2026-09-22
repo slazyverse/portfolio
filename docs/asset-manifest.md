@@ -68,13 +68,15 @@ Every object in the world is procedural. There is no imported mesh.
 | Object | Primitive | Technique |
 |---|---|---|
 | Building masses | Box | Merged per facade variant, UVs baked at world scale |
-| Fins, roof plant, signage | Box | Instanced, one mesh per kind |
+| Fins, relief bands, balconies, roof plant, signage, skybridges, street furniture | Box | Instanced, one mesh per kind |
 | Water tanks, pipework | Cylinder (8 and 6 sided) | Instanced |
 | Conduits | Line segments | Merged into one geometry |
 | Rain | Line segments | Animated entirely in a vertex shader |
 | Skyline | Plane | Instanced impostors, tinted toward fog by depth |
-| Street | Plane | Planar reflection at HIGH, textured plane below |
-| Ground mist | Plane | Three drifting quads, additive |
+| Traffic | Quads | Position computed from time in a vertex shader |
+| Steam | Quads | Vertex shader, placed at generated vent positions |
+| Street | Plane | Textured; light pooling painted by `WetSheen` |
+| Contact shade | Plane | Instanced, multiply-blended radial falloff |
 
 ---
 
@@ -90,15 +92,25 @@ uploaded to the GPU.
 
 ## Shaders
 
-Two, both written for this project:
+Three, all written for this project, all of the same shape: the object's
+position is a function of time, so the CPU writes one uniform per frame and
+touches nothing else.
 
-- **Rain** — a vertex shader that computes each drop's position from time, so a
-  frame of rain costs one uniform write rather than thousands of CPU updates.
-- Everything else uses three.js stock materials (`MeshStandardMaterial`,
-  `MeshBasicMaterial`) and drei's `MeshReflectorMaterial`.
+- **Rain** — falling streaks.
+- **Traffic** — vehicles on circular lanes, elongated along travel in view space.
+- **Steam** — rising, expanding, fading plumes.
+
+Everything else uses three.js stock materials.
 
 No post-processing stack: no bloom, no chromatic aberration, no screen-space
-pipeline.
+pipeline. **And, since Phase 5B, no planar reflection** — that was a second full
+render of the scene for a blurred grey mirror, replaced by light pooling painted
+directly onto the road for one instanced draw call.
+
+**The environment has no dependency on drei at all.** Removing the reflector and
+replacing drei's `PerspectiveCamera` with a plain three.js camera took the
+deferred bundle back under its ceiling and left the environment depending on
+three.js and React Three Fiber alone.
 
 ---
 
@@ -129,6 +141,7 @@ behind a paragraph.
 - No post-processing library.
 - No audio of any kind. Audio is a later phase and will be original or licensed,
   optional, and recorded here when it exists.
-- No new runtime dependency at all. The environment is built from three.js,
-  `@react-three/fiber` and `@react-three/drei`, all of which were already
-  present before this phase began.
+- No new runtime dependency at all. The environment is built from three.js and
+  `@react-three/fiber`, both of which predate this phase — and Phase 5B removed
+  its last use of `@react-three/drei`, so the environment now depends on fewer
+  packages than when it started.

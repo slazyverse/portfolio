@@ -72,16 +72,24 @@ export interface EnvironmentBudget {
    */
   textureSize: number;
   /**
-   * Planar reflections on the wet ground.
+   * Light pooling on the wet road, and steam off it.
    *
-   * A real extra render pass of the scene, so it is the most expensive single
-   * feature here and it is HIGH only. It is also the one that does the most
-   * for a rain-soaked street, which is exactly the trade the brief asks for:
-   * spend it on the hero surface, not everywhere.
+   * What replaced the planar reflection. That was a second full render of the
+   * scene every frame; this is one instanced draw call that paints the light
+   * a wet street actually shows — colour bleeding down from every sign — and
+   * it reads wetter than the blurred mirror did.
    */
-  reflections: false | { resolution: number; blur: number };
-  /** Ground mist and rain splash. */
   groundFx: boolean;
+  /**
+   * Vehicles in motion, as GPU-animated light streaks.
+   *
+   * The cheapest thing in the environment that makes it feel inhabited: two
+   * triangles each, one draw call for all of them, and their positions are a
+   * function of time rather than anything the CPU keeps.
+   */
+  traffic: number;
+  /** Soft contact shading under every building. */
+  contactShade: boolean;
 }
 
 export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
@@ -124,14 +132,9 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
      * The resolution you see is the tile's, multiplied by the repeat.
      */
     textureSize: 512,
-    // Measured, not guessed. A 512 buffer with a 340-pixel blur radius made
-    // the renderer miss frames badly enough that a screenshot could not be
-    // captured at all — drei's blur is multi-pass, so the radius is close to
-    // a linear cost multiplier on top of an already-doubled scene render.
-    // 256 with a short blur is visually almost identical on wet asphalt,
-    // because the surface is rough and the reflection is meant to be diffuse.
-    reflections: { resolution: 256, blur: 110 },
     groundFx: true,
+    traffic: 340,
+    contactShade: true,
   },
   balanced: {
     structures: 110,
@@ -144,10 +147,11 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     midRadius: 120,
     skyline: 38,
     textureSize: 384,
-    // No reflection pass. It is the first thing to go, because it is a second
-    // render of the scene and everything else here is a fraction of one.
-    reflections: false,
     groundFx: false,
+    traffic: 150,
+    // Kept at BALANCED: it is one instanced draw call and it is most of what
+    // makes a building look like it is standing on the ground.
+    contactShade: true,
   },
   /**
    * LOW never reaches the WebGL renderer — `QUALITY.low.webgl` is false, so the
@@ -166,8 +170,9 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     midRadius: 90,
     skyline: 20,
     textureSize: 256,
-    reflections: false,
     groundFx: false,
+    traffic: 0,
+    contactShade: false,
   },
 };
 

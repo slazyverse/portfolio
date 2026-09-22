@@ -2,11 +2,9 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { MeshReflectorMaterial } from "@react-three/drei";
 import * as THREE from "three";
 import type { StratumId } from "@/data/types";
 import { CITY_GEOMETRY } from "@/lib/environment/generate";
-import type { EnvironmentBudget } from "@/lib/environment/quality";
 import type { City, LevelEnvironment, LightCell } from "@/lib/environment/types";
 import type { CityTextures } from "./textures";
 import type { Palette } from "./palette";
@@ -24,24 +22,24 @@ import type { Palette } from "./palette";
 /**
  * The street.
  *
- * At HIGH this is a real planar reflection — a second render of the scene into
- * a 512px buffer, blurred. It is by a wide margin the most expensive thing in
- * the environment, and it is also the single change that turns a dark street
- * into a wet one. That is exactly the trade the brief asks for: buy the hero
- * surface, not a uniform sprinkle of effects nobody can point at.
+ * A textured plane, and deliberately nothing cleverer. Phase 5 rendered a real
+ * planar reflection here; Phase 5B removed it. Two reasons, and the second is
+ * the one that matters:
  *
- * Below HIGH the same plane keeps the road texture and loses the reflection.
- * It is still wet — the albedo has standing water painted into it — it just
- * no longer reflects the city that is standing in it.
+ *  - it was a second full render of the scene every frame, easily the most
+ *    expensive thing in the environment;
+ *  - what it produced was a blurred grey mirror, while the thing that actually
+ *    reads as a wet street is coloured light bleeding down onto it.
+ *
+ * That light is now painted directly by `WetSheen` for one instanced draw
+ * call. Cheaper, and it looks more like rain.
  */
 function Street({
   level,
   textures,
-  budget,
 }: {
   level: LevelEnvironment;
   textures: CityTextures;
-  budget: EnvironmentBudget;
 }) {
   const size = CITY_GEOMETRY.SPAN * 3.2;
 
@@ -62,12 +60,6 @@ function Street({
 
   useEffect(() => () => map.dispose(), [map]);
 
-  // Reflections are only ever worth it where there is sky and light to catch.
-  // A server hall floor reflecting a dark ceiling is a render pass spent on
-  // nothing, so the deep levels opt out regardless of tier.
-  const reflective =
-    budget.reflections !== false && (level.level === "surface" || level.level === "engine");
-
   return (
     <mesh
       rotation={[-Math.PI / 2, 0, 0]}
@@ -75,35 +67,17 @@ function Street({
       frustumCulled={false}
     >
       <planeGeometry args={[size, size]} />
-      {reflective && budget.reflections ? (
-        <MeshReflectorMaterial
-          map={map}
-          resolution={budget.reflections.resolution}
-          blur={[budget.reflections.blur, budget.reflections.blur / 3]}
-          mixBlur={1.4}
-          mixStrength={1.9}
-          // Deliberately not a mirror. Wet asphalt scatters — a perfect
-          // reflection reads as ice, and the blur is what makes it read as
-          // water on a rough surface.
-          roughness={0.72}
-          depthScale={1.1}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.3}
-          metalness={0.42}
-          // White: the road texture is the albedo. Multiplying it by the
-          // near-black ground token made the street disappear, which is the
-          // same mistake as tinting the facades with an interface colour.
-          color="#ffffff"
-          mirror={0}
-        />
-      ) : (
-        <meshStandardMaterial
-          map={map}
-          color={paved ? "#ffffff" : "#2a3038"}
-          roughness={paved ? 0.52 : 0.9}
-          metalness={paved ? 0.38 : 0.1}
-        />
-      )}
+      <meshStandardMaterial
+        map={map}
+        // White: the road texture is the albedo. Multiplying it by a near-black
+        // interface token made the street disappear, which is the same mistake
+        // as tinting the facades with one.
+        color={paved ? "#ffffff" : "#2a3038"}
+        // Wet asphalt is smooth and quite metallic in its response; a dry
+        // plant-room floor is neither.
+        roughness={paved ? 0.34 : 0.9}
+        metalness={paved ? 0.55 : 0.1}
+      />
     </mesh>
   );
 }
@@ -354,59 +328,6 @@ function Rain({
   );
 }
 
-/**
- * Ground mist.
- *
- * Three large, slowly drifting planes just above the street. Volumetric fog
- * would be a full-screen raymarch; this is three quads, and at ground level
- * behind a rain curtain the difference is not one anybody can point to.
- */
-function GroundMist({
-  floor,
-  palette,
-  paused,
-  motion,
-}: {
-  floor: number;
-  palette: Palette;
-  paused: React.RefObject<boolean>;
-  motion: boolean;
-}) {
-  const group = useRef<THREE.Group>(null);
-  const size = CITY_GEOMETRY.SPAN * 1.6;
-
-  useFrame((state) => {
-    if (paused.current || !motion || !group.current) return;
-    const t = state.clock.elapsedTime * 0.02;
-    group.current.children.forEach((child, i) => {
-      child.position.x = Math.sin(t + i * 2.1) * 26;
-      child.position.z = Math.cos(t * 0.8 + i * 1.7) * 26;
-    });
-  });
-
-  return (
-    <group ref={group}>
-      {[0, 1, 2].map((i) => (
-        <mesh
-          key={i}
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, floor + 6 + i * 9, 0]}
-          frustumCulled={false}
-        >
-          <planeGeometry args={[size, size]} />
-          <meshBasicMaterial
-            color={palette.fog}
-            transparent
-            opacity={0.1 - i * 0.022}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 /* --------------------------------------------------------------- accents --- */
 
 /**
@@ -496,5 +417,5 @@ function Conduits({ city, palette }: { city: City; palette: Palette }) {
   );
 }
 
-export { Street, Skyline, Rain, GroundMist, Accents, Conduits };
+export { Street, Skyline, Rain, Accents, Conduits };
 export type { StratumId };
