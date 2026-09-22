@@ -78,6 +78,62 @@ export const canvas2dStore = {
   },
 };
 
+/* ------------------------------------------------------------- Idleness --- */
+
+let idle = false;
+let idleScheduled = false;
+const idleListeners = new Set<() => void>();
+
+function scheduleIdle(): void {
+  if (idleScheduled || idle) return;
+  idleScheduled = true;
+
+  const flip = () => {
+    idle = true;
+    for (const listener of idleListeners) listener();
+  };
+
+  // `requestIdleCallback` where it exists, a timer where it does not. The
+  // timeout matters more than the idleness: on a page that never goes idle the
+  // environment should still arrive, just last.
+  const ric = (window as Window & {
+    requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+  }).requestIdleCallback;
+
+  if (typeof ric === "function") ric(flip, { timeout: 2000 });
+  else window.setTimeout(flip, 400);
+}
+
+/**
+ * Whether the page has finished the work that matters.
+ *
+ * The environment is decoration, and decoration does not get to compete with
+ * content for the main thread. Building the city means generating ten textures
+ * and merging several thousand vertices — a few hundred milliseconds that
+ * belong *after* the page is readable, not during.
+ *
+ * This is a store rather than an effect for the same reason the capability
+ * probes are: it is a one-way fact about the document that the server cannot
+ * know, and `useState` filled in by an effect would be a second render to
+ * deliver a value that was always going to arrive.
+ *
+ * The CSS base layer is server-rendered and unaffected, so the page still has
+ * atmospheric depth from the first paint — what waits is the expensive part.
+ */
+export const idleStore = {
+  subscribe(listener: () => void): () => void {
+    idleListeners.add(listener);
+    scheduleIdle();
+    return () => idleListeners.delete(listener);
+  },
+  getSnapshot(): boolean {
+    return idle;
+  },
+  getServerSnapshot(): boolean {
+    return false;
+  },
+};
+
 /* ---------------------------------------------------------- Quality tiers --- */
 
 /**

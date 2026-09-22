@@ -161,7 +161,18 @@ describe("environment scrim keeps text legible over the city", () => {
    * draws; a test that fails on a case that cannot occur teaches you to widen
    * the bound for no reason.
    */
-  const ENVIRONMENT_COLOURS = ["--accent", "--cold", "--color-l3"] as const;
+  const ENVIRONMENT_COLOURS = [
+    "--accent",
+    "--cold",
+    // The city's material reflectance, which is deliberately far lighter than
+    // any interface token — concrete returns about a third of the light that
+    // hits it. These became the brightest non-emissive pixels the environment
+    // can produce the moment the renderer started shading correctly, so they
+    // belong in this bound. Checking `--color-l3` instead, as an earlier
+    // version did, was measuring a colour the city no longer draws.
+    "--env-material",
+    "--env-metal",
+  ] as const;
 
   /** The inks that sit over the environment on a page. */
   const INKS = ["--fg", "--fg-hi", "--fg-mid", "--fg-low"] as const;

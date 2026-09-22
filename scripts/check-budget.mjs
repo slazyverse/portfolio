@@ -62,12 +62,26 @@ try {
 const referenced = [...new Set([...html.matchAll(/static\/chunks\/[\w-]+\.js/g)].map((m) => m[0]))];
 const initialJs = referenced.reduce((sum, c) => sum + gzKB(join(NEXT, c)), 0);
 
-// --- the lazy WebGL chunk: the largest chunk NOT referenced by the entry ---
+/* --- everything held out of the entry -------------------------------------
+   Summed, not sampled.
+
+   This used to report the single largest non-entry chunk, which was the
+   three.js vendor bundle, and called that "lazy WebGL". It was measuring the
+   biggest thing rather than the whole thing: by the end of Phase 5 the largest
+   chunk was 230 KB while the deferred payload across seven chunks was 299 KB.
+   A gate that reports the largest item cannot see a budget being spent in
+   pieces.
+
+   Conservative on purpose — a couple of these chunks are lazy components that
+   are not the environment. A budget that over-counts errs toward optimising
+   sooner, which is the direction this project has chosen every time. */
 const allChunks = walk(join(NEXT, "static/chunks")).filter((f) => f.endsWith(".js"));
-const lazy = allChunks
+const deferredChunks = allChunks
   .filter((f) => !referenced.some((r) => f.endsWith(r.replace("static/chunks/", ""))))
   .map((f) => ({ f, kb: gzKB(f) }))
-  .sort((a, b) => b.kb - a.kb)[0];
+  .sort((a, b) => b.kb - a.kb);
+const deferred = deferredChunks.reduce((sum, c) => sum + c.kb, 0);
+const lazy = deferredChunks[0];
 
 // --- CSS ---
 const css = walk(join(NEXT, "static")).filter((f) => f.endsWith(".css"))
@@ -79,7 +93,12 @@ const fonts = fontHrefs.reduce((sum, h) => sum + statSync(join(NEXT, h.replace("
 
 const checks = [
   ["initial JS (gz)", initialJs, BUDGET.initialJs, `${referenced.length} chunks`],
-  ["lazy WebGL (gz)", lazy ? lazy.kb : 0, BUDGET.lazyWebgl, lazy ? "held out of entry" : "none"],
+  [
+    "deferred JS (gz)",
+    deferred,
+    BUDGET.lazyWebgl,
+    `${deferredChunks.length} chunks, largest ${lazy ? lazy.kb.toFixed(1) : 0} KB`,
+  ],
   ["CSS (gz)", css, BUDGET.css, ""],
   ["fonts preloaded", fonts, BUDGET.fontsPreloaded, `${fontHrefs.length} files`],
 ];

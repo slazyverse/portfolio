@@ -2,6 +2,7 @@ import { ANCHOR_SPECS, CITY_SEED } from "@/data/environment";
 import { LEVEL_ORDER, levelIndex, route } from "@/data/routes";
 import type { StratumId } from "@/data/types";
 import type { QualityTier } from "@/lib/capability";
+import { composeBuilding, type Archetype, type DetailTier } from "./kit";
 import { environmentBudget } from "./quality";
 import { createRng, type Rng } from "./seed";
 import type {
@@ -11,8 +12,8 @@ import type {
   LevelEnvironment,
   LightCell,
   Signal,
+  SkylineShape,
   Structure,
-  StructureKind,
 } from "./types";
 
 /* ---------------------------------------------------------------------------
@@ -54,7 +55,7 @@ import type {
  * silhouette and no depth for the fog to grade. Wide enough that there is a
  * middle distance, tight enough that it is still a canyon and not a plain.
  */
-const SPAN = 130;
+const SPAN = 330;
 
 /**
  * Radius of the central shaft. Nothing is generated inside it.
@@ -62,10 +63,10 @@ const SPAN = 130;
  * This is the room the camera has. Too small and every shot is a close-up of
  * whichever facade happens to be nearest.
  */
-const VOID_RADIUS = 18;
+const VOID_RADIUS = 46;
 
 /** Vertical distance between level floors. Descending decreases Y. */
-const LEVEL_DROP = 46;
+const LEVEL_DROP = 155;
 
 /**
  * How far the camera stands from the centre of the shaft, and how much room is
@@ -81,8 +82,8 @@ const LEVEL_DROP = 46;
  * The void that matters is the one around the viewer, not the one around the
  * origin, so both are enforced.
  */
-const CAMERA_OFFSET = 7.6;
-const CAMERA_CLEARANCE = 27;
+const CAMERA_OFFSET = 14;
+const CAMERA_CLEARANCE = 66;
 
 /**
  * Where the camera stands horizontally at a given level.
@@ -103,7 +104,7 @@ export function cameraBearing(index: number): number {
 
 /** How the four levels differ. The only place level character is defined. */
 interface LevelProfile {
-  kinds: readonly StructureKind[];
+  kinds: readonly Archetype[];
   /** Base footprint range: [min, max]. */
   footprint: readonly [number, number];
   /** Height range and the skew applied to it. */
@@ -156,16 +157,16 @@ const PROFILE: Record<StratumId, LevelProfile> = {
    * Warm amber windows: this is where people are, and amber is the subject.
    */
   surface: {
-    kinds: ["tower", "tower", "slab"],
-    footprint: [3.4, 8.2],
-    height: [12, 42, 2.1],
+    kinds: ["tower", "tower", "slab", "stack"],
+    footprint: [11, 27],
+    height: [26, 118, 2.0],
     signal: "amber",
     litShare: 0.42,
-    cell: 1.5,
+    cell: 3.4,
     conduitAxis: "vertical",
     rows: false,
     spanScale: 1,
-    structureShare: 0.26,
+    structureShare: 0.24,
     // The establishing level. Warm, populated, the most lit of the four.
     lightShare: 0.34,
   },
@@ -174,12 +175,12 @@ const PROFILE: Record<StratumId, LevelProfile> = {
    * data spines. Fewer, taller, colder; the machine, not the person.
    */
   interface: {
-    kinds: ["mast", "tower", "mast"],
-    footprint: [1.6, 5.4],
-    height: [16, 38, 1.5],
+    kinds: ["tower", "stack", "tower"],
+    footprint: [8, 20],
+    height: [38, 104, 1.5],
     signal: "cold",
     litShare: 0.34,
-    cell: 1.5,
+    cell: 3.4,
     conduitAxis: "vertical",
     rows: false,
     spanScale: 0.88,
@@ -194,15 +195,15 @@ const PROFILE: Record<StratumId, LevelProfile> = {
    */
   engine: {
     kinds: ["machine", "slab", "machine"],
-    footprint: [4.5, 9.5],
-    height: [5, 17, 1.3],
+    footprint: [14, 34],
+    height: [11, 38, 1.3],
     signal: "amber",
     litShare: 0.3,
-    cell: 1.4,
+    cell: 3.0,
     conduitAxis: "horizontal",
     rows: false,
     spanScale: 0.76,
-    structureShare: 0.18,
+    structureShare: 0.16,
     // The darkest level by design. Light here is furnace glow, and rare.
     lightShare: 0.16,
   },
@@ -213,15 +214,15 @@ const PROFILE: Record<StratumId, LevelProfile> = {
    */
   substrate: {
     kinds: ["rack"],
-    footprint: [2.2, 3.4],
-    height: [2.6, 6.4, 1.0],
+    footprint: [2.4, 3.6],
+    height: [2.8, 5.4, 1.0],
     signal: "cold",
     litShare: 0.8,
     cell: 0.62,
     conduitAxis: "horizontal",
     rows: true,
-    spanScale: 0.64,
-    structureShare: 0.36,
+    spanScale: 0.42,
+    structureShare: 0.42,
     // A server hall reads as dense rows of indicators or it reads as nothing.
     lightShare: 0.3,
   },
@@ -253,12 +254,16 @@ function placements(
   rows: boolean,
   span: number,
   camera: readonly [number, number],
-): Cell[] {
+): { cells: Cell[]; step: number } {
   const half = span / 2;
   // Enough cells that rejecting the void still leaves room to choose from.
   const per = Math.max(4, Math.ceil(Math.sqrt(count * 2.6)));
   const step = span / per;
-  const jitter = rows ? step * 0.06 : step * 0.3;
+  // Jitter has to stay well inside the cell, because a footprint is sized
+  // against the step below. Two neighbours each jittered a third of a cell
+  // toward one another is how generated cities end up with buildings growing
+  // through each other, which no amount of lighting recovers from.
+  const jitter = rows ? step * 0.04 : step * 0.16;
 
   const cells: Cell[] = [];
   for (let i = 0; i < per; i += 1) {
@@ -282,7 +287,7 @@ function placements(
     cells[j] = a;
   }
 
-  return cells.slice(0, count);
+  return { cells: cells.slice(0, count), step };
 }
 
 /* ---------------------------------------------------------------- lights --- */
@@ -457,6 +462,116 @@ function anchorsFor(level: StratumId): EnvironmentAnchor[] {
 
 /* ------------------------------------------------------------------ city --- */
 
+/**
+ * How much of the kit a building earns, by how close it stands to the camera.
+ *
+ * The single most effective piece of rendering discipline in the whole
+ * environment: detail is spent where it can be resolved and nowhere else. A
+ * building eighty units behind the lens gets a mass and a roofline, because
+ * that is all anyone could see of it even if it had fins, pipes and signage.
+ *
+ * Derived from the camera's standing point rather than from the origin, for
+ * the same reason the clearance is — the camera is not at the centre.
+ */
+function detailFor(
+  x: number,
+  z: number,
+  camera: readonly [number, number],
+  budget: { nearRadius: number; midRadius: number },
+): DetailTier {
+  const distance = Math.hypot(x - camera[0], z - camera[1]);
+  if (distance <= budget.nearRadius) return "near";
+  if (distance <= budget.midRadius) return "mid";
+  return "far";
+}
+
+/**
+ * The horizon.
+ *
+ * Flat impostors on a ring well beyond the playable footprint, so the city
+ * does not stop at its own edge. An empty horizon is the fastest way to make
+ * a world feel like a diorama on a table — and modelled geometry out there
+ * would cost three orders of magnitude more than a silhouette in haze for a
+ * difference nobody can resolve.
+ *
+ * Two rings at different radii, so the far city has depth of its own.
+ */
+function skyline(rng: Rng, level: StratumId, count: number): SkylineShape[] {
+  const floor = levelFloor(level);
+  const out: SkylineShape[] = [];
+  if (count <= 0) return out;
+
+  for (let i = 0; i < count; i += 1) {
+    // Golden-angle spacing: even coverage without the visible periodicity a
+    // uniform step produces.
+    const angle = i * 2.399963 + rng.range(-0.12, 0.12);
+    const ring = i % 2;
+    const depth = ring === 0 ? rng.range(0.35, 0.62) : rng.range(0.66, 1);
+    const radius = SPAN * (1.05 + depth * 1.5);
+    const height = rng.skewed(26, 132, 1.9) * (1 - depth * 0.28);
+    const width = rng.range(10, 34);
+
+    out.push({
+      position: [Math.cos(angle) * radius, floor, Math.sin(angle) * radius] as const,
+      size: [width, height] as const,
+      depth,
+      // Sparse glow, and less of it the further back it sits — atmospheric
+      // perspective applies to light as well as to form.
+      // Atmospheric perspective applies to light as well as to form: the
+      // further back a tower is, the less of its glow survives the haze.
+      lit: rng.chance(0.62) ? rng.range(0.08, 0.55) * (1 - depth * 0.85) : 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * The landmark.
+ *
+ * A generated city with no hero is a texture: everything is equally
+ * interesting, so nothing is. One structure gets a disproportionate share of
+ * the detail budget and stands where the camera is already looking, because
+ * that is how a shot acquires a subject.
+ *
+ * Authored rather than sampled. Its position is derived from the camera's
+ * focal direction, its proportions are fixed, and it is the only building in
+ * the city that does not take its size from the grid — a landmark that the
+ * generator might or might not have produced is not a landmark.
+ *
+ * Surface only, for now. The other three levels have their own character and
+ * the cinematic entry that this is composed for is Phase 6's subject.
+ */
+function heroFor(level: StratumId, seed: string): Structure | null {
+  if (level !== "surface") return null;
+
+  const index = LEVEL_ORDER.indexOf(level);
+  const [cx, cz] = cameraAnchorXZ(index);
+  // Straight down the camera's line of sight, far enough that the whole
+  // tower fits in frame and near enough to dominate it.
+  const bearing = cameraBearing(index) + Math.PI;
+  // Inside the level's own footprint: a landmark that stands outside the city
+  // is a folly on a hill, not a city's tallest building. At this range a
+  // 232-metre tower subtends about fifty degrees, so it dominates the frame
+  // without leaving it.
+  const distance = 150;
+
+  return composeBuilding({
+    rng: createRng(`${seed}:hero`),
+    level,
+    archetype: "tower",
+    detail: "hero",
+    position: [cx + Math.cos(bearing) * distance, levelFloor(level), cz + Math.sin(bearing) * distance] as const,
+    width: 46,
+    depth: 41,
+    // Roughly twice the tallest thing the grid will produce, which is what
+    // makes it read as the landmark rather than as another tower.
+    height: 232,
+    rotation: 0.14,
+    signal: "amber",
+    lit: true,
+  });
+}
+
 function generateLevel(
   level: StratumId,
   tier: QualityTier,
@@ -469,29 +584,45 @@ function generateLevel(
   const rng = createRng(`${seed}:${level}`);
   const floor = levelFloor(level);
 
-  const cells = placements(
+  const camera = cameraAnchorXZ(LEVEL_ORDER.indexOf(level));
+  const { cells, step } = placements(
     rng,
     Math.floor(budget.structures * profile.structureShare),
     profile.rows,
     SPAN * profile.spanScale,
-    cameraAnchorXZ(LEVEL_ORDER.indexOf(level)),
+    camera,
   );
+
+  // A footprint may not exceed what its cell can hold, minus the street. The
+  // podium flares wider than the shaft, so the ceiling accounts for that too.
+  const maxFootprint = Math.min(profile.footprint[1], step * 0.52);
+  const minFootprint = Math.min(profile.footprint[0], maxFootprint * 0.6);
+
   const structures: Structure[] = cells.map((cell, i) => {
-    const kind = rng.pick(profile.kinds);
-    const w = rng.range(profile.footprint[0], profile.footprint[1]);
-    const d = profile.rows ? w * rng.range(2.4, 3.6) : w * rng.range(0.7, 1.4);
+    const w = rng.range(minFootprint, maxFootprint);
+    const d = profile.rows
+      ? w * rng.range(2.4, 3.6)
+      : w * rng.range(0.72, 1.32);
     const h = rng.skewed(profile.height[0], profile.height[1], profile.height[2]);
-    return {
-      id: `${level}-${i}`,
+    const composed = composeBuilding({
+      rng,
       level,
-      kind,
+      archetype: profile.rows ? "rack" : rng.pick(profile.kinds),
+      detail: detailFor(cell.x, cell.z, camera, budget),
       position: [cell.x, floor, cell.z] as const,
-      size: [w, h, d] as const,
+      width: w,
+      depth: d,
+      height: h,
       // Rows are orderly; everything else is a few degrees off true.
       rotation: profile.rows ? 0 : rng.range(-0.06, 0.06),
-      signal: rng.chance(profile.litShare) ? profile.signal : "none",
-    };
+      signal: profile.signal,
+      lit: rng.chance(profile.litShare),
+    });
+    return { ...composed, id: `${level}-${i}` };
   });
+
+  const hero = heroFor(level, seed);
+  if (hero) structures.unshift({ ...hero, id: `${level}-hero` });
 
   // Count first, then light. The exact candidate total is arithmetic over the
   // structures that already exist, so the probability that hits this level's
@@ -520,6 +651,7 @@ function generateLevel(
     lights,
     conduits: conduits(rng, level, profile, budget.conduitsPerLevel),
     anchors: anchorsFor(level),
+    skyline: skyline(rng, level, budget.skyline),
   };
 }
 
@@ -579,14 +711,28 @@ export function generateCity(tier: QualityTier, seed: string = CITY_SEED): City 
     levels,
     stats: {
       structures: count((l) => l.structures.length),
+      parts: count((l) =>
+        l.structures.reduce((sum, st) => sum + st.parts.length, 0),
+      ),
       lights: count((l) => l.lights.length),
       conduits: count((l) => l.conduits.length),
       anchors: count((l) => l.anchors.length),
-      // One instanced mesh for all structures, one for all lit cells, one
-      // merged line geometry for all conduits, one points cloud for rain,
-      // plus the ground plane. The whole city is a handful of draw calls,
-      // which is the entire reason for instancing it.
-      drawCalls: 4 + (environmentBudget(tier).rain > 0 ? 1 : 0),
+      skyline: count((l) => l.skyline.length),
+      /**
+       * One instanced mesh per kit piece kind, across the whole city and all
+       * four levels — plus lit cells, conduits, ground, road, skyline, rain
+       * and the hero's own meshes.
+       *
+       * Counted rather than guessed: seven part kinds, then the fixed set.
+       * This is what instancing buys — a building with a podium, three
+       * setbacks, a crown, fins, pipes, roof plant and two signs costs
+       * thirty-odd instances and not one additional draw call.
+       */
+      drawCalls:
+        7 +
+        4 +
+        (environmentBudget(tier).rain > 0 ? 1 : 0) +
+        (environmentBudget(tier).groundFx ? 1 : 0),
     },
   };
 }

@@ -19,18 +19,56 @@ import type { RouteId, StratumId } from "@/data/types";
  *    by a page — only by the lazily loaded environment.
  */
 
-/** What a generated structure is, which decides how it is drawn and lit. */
-export type StructureKind =
-  /** Slender vertical mass. Surface towers. */
-  | "tower"
-  /** Wide, shorter block. Surface and engine. */
-  | "slab"
-  /** Thin antenna or aerial. Interface. */
+/** What a generated structure is, which decides how it is composed and lit. */
+export type StructureKind = "tower" | "slab" | "stack" | "machine" | "rack";
+
+/**
+ * The pieces a building is assembled from.
+ *
+ * Each kind becomes exactly one `InstancedMesh` at render time, across the
+ * whole city and all four levels. That is the trade this model exists to make:
+ * a richer building costs more instances, which are close to free, and never
+ * more draw calls, which are not.
+ */
+export type PartKind =
+  /** A building volume, textured with the facade atlas. */
+  | "mass"
+  /** Vertical structural fin on a facade. */
+  | "fin"
+  /** Rooftop plant: air handling, machine rooms. */
+  | "roofUnit"
+  /** Cylindrical water tank on a frame. */
+  | "tank"
+  /** Antenna mast, often with an obstruction light. */
   | "mast"
-  /** Industrial plant: wide, heavy, low. Engine. */
-  | "machine"
-  /** Server rack. Substrate. */
-  | "rack";
+  /** Emissive signage panel. */
+  | "sign"
+  /** Service pipework running up a flank. */
+  | "pipe";
+
+export interface Part {
+  kind: PartKind;
+  /** Centre of the part, in world space. */
+  position: readonly [number, number, number];
+  size: readonly [number, number, number];
+  rotation: number;
+  signal: Signal;
+  /** Which facade atlas cell a mass uses. */
+  variant: number;
+  /** 0..1. Drives grime, roughness and colour desaturation. */
+  wear: number;
+  /** 0..1. Emissive strength, for signs and obstruction lights. */
+  emissive: number;
+}
+
+/**
+ * How much of the kit a building received.
+ *
+ * Assigned by distance from the level's camera, so detail is spent where it
+ * can be seen. This is the difference between a city that costs what it looks
+ * like and one that pays full price for geometry behind the lens.
+ */
+export type DetailTier = "hero" | "near" | "mid" | "far";
 
 /** Which signal family lights a thing. The Phase 2 semantics are not negotiable. */
 export type Signal =
@@ -47,11 +85,18 @@ export interface Structure {
   kind: StructureKind;
   /** Centre of the footprint. `y` is the base, not the centre of mass. */
   position: readonly [number, number, number];
-  /** Footprint width, height, footprint depth. */
+  /** Overall bounding footprint and height. */
   size: readonly [number, number, number];
   /** Yaw in radians. Small, deliberate: a city is not perfectly aligned. */
   rotation: number;
   signal: Signal;
+  detail: DetailTier;
+  /** Facade atlas cell for the building's main masses. */
+  variant: number;
+  /** 0..1 weathering. */
+  wear: number;
+  /** The kit pieces this building is assembled from. */
+  parts: readonly Part[];
 }
 
 /**
@@ -118,6 +163,23 @@ export interface EnvironmentAnchor {
   importance: "primary" | "secondary";
 }
 
+/**
+ * A distant building on the horizon, drawn as a flat impostor.
+ *
+ * Never resolved as geometry: at that range a silhouette in haze is
+ * indistinguishable from a modelled tower, and the difference in cost is
+ * three orders of magnitude. An empty horizon is the fastest way to make a
+ * city feel like a diorama.
+ */
+export interface SkylineShape {
+  position: readonly [number, number, number];
+  size: readonly [number, number];
+  /** 0..1 — how far into the haze it sits. */
+  depth: number;
+  /** Sparse window glow, baked as a count rather than as geometry. */
+  lit: number;
+}
+
 /** One level of the city: a horizontal band of the vertical shaft. */
 export interface LevelEnvironment {
   level: StratumId;
@@ -129,13 +191,19 @@ export interface LevelEnvironment {
   lights: readonly LightCell[];
   conduits: readonly Conduit[];
   anchors: readonly EnvironmentAnchor[];
+  /** The horizon behind this level. */
+  skyline: readonly SkylineShape[];
 }
 
 export interface CityStats {
   structures: number;
+  /** Kit pieces across the whole city, grouped into one mesh per kind. */
+  parts: number;
   lights: number;
   conduits: number;
   anchors: number;
+  /** Distant impostor silhouettes on the horizon. */
+  skyline: number;
   /** Instanced draw calls the renderer will issue for the static city. */
   drawCalls: number;
 }

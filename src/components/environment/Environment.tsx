@@ -52,10 +52,20 @@ const Diagnostics =
  * is never the way to reach anything. A reader with no WebGL, no JavaScript, a
  * screen reader, or a browser from 2016 loses atmosphere and nothing else.
  *
- * ## Why it stands down on the landing page — and why it does not unmount
+ * ## Where it stands down — and why it does not unmount
  *
- * `/` already owns a WebGL context for the descent scene, so this layer hides
- * there rather than drawing a second city behind someone else's.
+ * Two routes own their own scene, so this layer hides on both rather than
+ * drawing a second city behind someone else's:
+ *
+ *   `/`         the landing, which still owns the descent scene
+ *   `/system`   the environment laboratory, whose whole purpose is to render
+ *               the city at a tier this device may not have chosen
+ *
+ * The second one was not a guess. With the global environment and the lab
+ * stage both live, `/system` was rendering two complete cities at once — one
+ * of them with a planar reflection pass — and the page could not finish a
+ * frame. A page that exists to let you look at the city carefully is the last
+ * place to be rendering it twice.
  *
  * It hides; it does not unmount. That distinction was earned. The first
  * version removed the canvas on `/` and rebuilt it on the way out, which looks
@@ -75,8 +85,8 @@ export function Environment() {
   const { level, pathname } = useRouteContext();
   const { mode, tier, motion, fail, failure } = useEnvironment();
 
-  const onLanding = pathname === "/";
-  const active = !onLanding && mode !== "none";
+  const ownsItsOwnScene = pathname === "/" || pathname === "/system";
+  const active = !ownsItsOwnScene && mode !== "none";
 
   // Once the environment has been wanted, it stays mounted for the session.
   // Adjusting state during render rather than in an effect: this is derived
@@ -121,7 +131,7 @@ export function Environment() {
           motion={motion}
           level={level}
           failure={failure}
-          suppressed={onLanding ? "landing page owns its own scene" : undefined}
+          suppressed={ownsItsOwnScene ? `${pathname} owns its own scene` : undefined}
         />
       )}
     </div>

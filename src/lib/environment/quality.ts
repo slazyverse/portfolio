@@ -43,37 +43,111 @@ export interface EnvironmentBudget {
   lightsOnDistantLevels: boolean;
   /** Renderer antialiasing. Off everywhere: fill rate is the constraint. */
   antialias: boolean;
+
+  /* --- fidelity ---------------------------------------------------------
+     Tiers are defined by visual fidelity, not merely object count. These are
+     the controls that decide what the world looks like rather than how much
+     of it there is. */
+
+  /**
+   * Within this distance of the camera a building gets the full kit — fins,
+   * pipes, signage, a populated roof.
+   */
+  nearRadius: number;
+  /** Beyond `nearRadius` and within this, a mass and a roofline. */
+  midRadius: number;
+  /** Distant impostor silhouettes per level. Zero leaves an empty horizon. */
+  skyline: number;
+  /**
+   * Edge length of each generated facade texture.
+   *
+   * The single largest GPU memory decision in the environment, and one that
+   * is easy to get wrong by an order of magnitude: there are four facade
+   * variants, each with an albedo and an emissive map, plus a road and a
+   * grime map — ten textures, each costing size² × 4 bytes × 1.33 for
+   * mipmaps. At 1024 that is 49 MB. At 512 it is 13 MB.
+   *
+   * Asserted in `tests/environment-detail.test.ts`, which is where the 49 MB
+   * version was caught.
+   */
+  textureSize: number;
+  /**
+   * Planar reflections on the wet ground.
+   *
+   * A real extra render pass of the scene, so it is the most expensive single
+   * feature here and it is HIGH only. It is also the one that does the most
+   * for a rain-soaked street, which is exactly the trade the brief asks for:
+   * spend it on the hero surface, not everywhere.
+   */
+  reflections: false | { resolution: number; blur: number };
+  /** Ground mist and rain splash. */
+  groundFx: boolean;
 }
 
 export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
   high: {
-    structures: 260,
+    structures: 170,
     /**
-     * Raised from 1600 after looking at the result on screen.
+     * Accent lights, not windows.
      *
-     * Worth stating plainly, because "the budget was raised to fit the
-     * feature" is usually the wrong move: this is not one of the committed
-     * budgets. Initial JS, lazy WebGL and CSS are fixed contracts and none of
-     * them move. This is an internal render parameter, and the cost of the
-     * change is one number: lit cells are instanced quads sharing a single
-     * draw call, so 3200 rather than 1600 adds about 3200 triangles and
-     * roughly 200 KB of instance matrices, changes no draw call, and adds no
-     * bytes to any bundle. At 1600 a facade held too few cells to read as a
-     * facade at all.
+     * This number went up to 3200 when instanced quads *were* the window
+     * system, and has come back down now that facades carry a generated
+     * texture with its own emissive map. A texture gives a tower hundreds of
+     * correlated, blind-drawn, service-floor-interrupted windows for one
+     * material; quads gave it a scattering of identical squares for one
+     * instance each.
+     *
+     * What is left for these to do is the work a texture cannot: rack
+     * indicators on the substrate, where a 2-metre cabinet has no facade to
+     * speak of, and bright accents close to the lens.
      */
-    maxLights: 3200,
-    rain: 1400,
+    maxLights: 1200,
+    rain: 2200,
     conduitsPerLevel: 7,
     lightsOnDistantLevels: true,
     antialias: false,
+    // Sized against the world, not picked. The city's buildable band runs
+    // from about 66 to 180 metres from the camera, so a near radius of 190
+    // classified *every* building as near and the whole detail system did
+    // nothing at the tier that can most afford it.
+    nearRadius: 105,
+    midRadius: 155,
+    skyline: 64,
+    /**
+     * 512, not 1024.
+     *
+     * Four facade albedos and four emissive maps at 1024 is 43 MB of GPU
+     * memory before the road and grime maps, which is not a budget — it is
+     * what happens when nobody multiplies it out. At 512 the whole set is
+     * about 13 MB, and because the facade *tiles* up a building rather than
+     * stretching to fit, a forty-storey tower still shows five tiles of it.
+     * The resolution you see is the tile's, multiplied by the repeat.
+     */
+    textureSize: 512,
+    // Measured, not guessed. A 512 buffer with a 340-pixel blur radius made
+    // the renderer miss frames badly enough that a screenshot could not be
+    // captured at all — drei's blur is multi-pass, so the radius is close to
+    // a linear cost multiplier on top of an already-doubled scene render.
+    // 256 with a short blur is visually almost identical on wet asphalt,
+    // because the surface is rough and the reflection is meant to be diffuse.
+    reflections: { resolution: 256, blur: 110 },
+    groundFx: true,
   },
   balanced: {
-    structures: 140,
-    maxLights: 1100,
-    rain: 0,
+    structures: 110,
+    maxLights: 520,
+    rain: 900,
     conduitsPerLevel: 4,
     lightsOnDistantLevels: false,
     antialias: false,
+    nearRadius: 70,
+    midRadius: 120,
+    skyline: 38,
+    textureSize: 384,
+    // No reflection pass. It is the first thing to go, because it is a second
+    // render of the scene and everything else here is a fraction of one.
+    reflections: false,
+    groundFx: false,
   },
   /**
    * LOW never reaches the WebGL renderer — `QUALITY.low.webgl` is false, so the
@@ -82,12 +156,18 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
    * fallback, both of which read the same model.
    */
   low: {
-    structures: 60,
+    structures: 54,
     maxLights: 0,
     rain: 0,
     conduitsPerLevel: 2,
     lightsOnDistantLevels: false,
     antialias: false,
+    nearRadius: 0,
+    midRadius: 90,
+    skyline: 20,
+    textureSize: 256,
+    reflections: false,
+    groundFx: false,
   },
 };
 

@@ -61,6 +61,7 @@
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
   background: linear-gradient(
     to right,
@@ -79,9 +80,34 @@
   visibility: hidden;
 }
 
+/* --- Stacking inside the environment --------------------------------------
+   Stated explicitly, because leaving it to DOM order shipped a bug: the base
+   layer and the renderer are both absolutely positioned with `z-index: auto`,
+   and the gradient ended up painting over the entire WebGL city. The city
+   rendered perfectly the whole time and nobody could see any of it.
+
+   Three layers, in order: the CSS base at the back, the renderer over it, the
+   legibility scrim over both. */
+
+.env-base {
+  z-index: 0;
+}
+
+/* The renderer's container.
+
+   `relative`, not `absolute`. React Three Fiber gives its own container
+   `position: relative; width: 100%; height: 100%` and measures that element to
+   size the drawing buffer — overriding it to `absolute; inset: 0` left that
+   measurement at zero, so the canvas stayed at the HTML default of 300x150
+   inside a container of 839x542 and the renderer drew nothing at all.
+
+   The parent supplies the size in both places this is used: the environment
+   layer is `fixed; inset: 0`, and the laboratory stage has an explicit height.
+   So a plain full-size block is all this needs to be. */
+
 .env-canvas {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;

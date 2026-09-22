@@ -4,6 +4,7 @@ import { useCallback, useState, useSyncExternalStore } from "react";
 import { useMotionAllowed } from "@/components/providers/MotionProvider";
 import {
   canvas2dStore,
+  idleStore,
   qualityTierStore,
   webglStore,
   type QualityTier,
@@ -63,6 +64,14 @@ export function useEnvironment(): EnvironmentState {
     qualityTierStore.getServerSnapshot,
   );
 
+  // The environment waits for the page to be done with the main thread.
+  // Content first, atmosphere second — always, and not only on slow devices.
+  const ready = useSyncExternalStore(
+    idleStore.subscribe,
+    idleStore.getSnapshot,
+    idleStore.getServerSnapshot,
+  );
+
   const [failure, setFailure] = useState<string | undefined>();
 
   const fail = useCallback((reason: string) => {
@@ -72,12 +81,15 @@ export function useEnvironment(): EnvironmentState {
     setFailure((current) => current ?? reason);
   }, []);
 
-  const mode: EnvironmentMode = resolveEnvironmentMode({
+  // "Not yet" and "failed" are different states and do not share a flag: one
+  // resolves on its own, the other never does.
+  const resolved = resolveEnvironmentMode({
     tier,
     webgl,
     canvas2d,
     disabled: Boolean(failure),
   });
+  const mode: EnvironmentMode = ready ? resolved : "none";
 
   return { mode, tier, motion, fail, failure };
 }

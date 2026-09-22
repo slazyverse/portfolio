@@ -34,14 +34,39 @@ export interface CameraTarget {
  * Each value sits inside its level's structures rather than over them.
  */
 const EYE: Record<StratumId, number> = {
-  surface: 19,
-  interface: 16,
-  engine: 8,
-  substrate: 3.6,
+  // Street level. Standing in the road, looking up a canyon of towers — the
+  // shot the whole surface district is composed for.
+  surface: 9,
+  // Above the cloud deck, among the masts.
+  interface: 96,
+  // On the plant floor, high enough to read the machine blocks as masses.
+  engine: 21,
+  // Inside a server hall, at the height of the cabinets.
+  substrate: 4.4,
+};
+
+/**
+ * How far above or below the horizon each level looks, measured at the focal
+ * distance.
+ *
+ * Authored per level, because the subject is different on each one. At the
+ * surface the subject is up — towers rising out of frame — and a level camera
+ * would frame nothing but wet road. Deeper down the subject is ahead or
+ * slightly below.
+ */
+const PITCH: Record<StratumId, number> = {
+  // Enough to make the towers converge overhead, low enough that the wet
+  // street stays in frame. At 74 the shot was all sky and facade and the
+  // reflective ground — the most expensive thing in the scene and the one
+  // that says "rain" — was entirely out of view.
+  surface: 46,
+  interface: -26,
+  engine: -8,
+  substrate: -1.5,
 };
 
 /** How far across the shaft the camera looks. Past the far wall. */
-const FOCUS_DISTANCE = 62;
+const FOCUS_DISTANCE = 165;
 
 /**
  * Where the camera stands to observe a level.
@@ -72,15 +97,19 @@ export function cameraTargetForLevel(level: StratumId): CameraTarget {
      */
     lookAt: [
       Math.cos(bearing + Math.PI) * FOCUS_DISTANCE,
-      // Proportional to the eye height, not a fixed drop. A fixed eleven-unit
-      // drop is a gentle tilt from nineteen units up and a stare into the
-      // floor from three and a half.
-      floor + eye * 0.45,
+      floor + eye + PITCH[level],
       Math.sin(bearing + Math.PI) * FOCUS_DISTANCE,
     ] as const,
-    // Narrower at depth. The substrate is a tight space and a wide lens would
-    // contradict the compression the design system applies to the same level.
-    fov: 52 - i * 2.5,
+    /**
+     * Wider at the surface, narrower at depth.
+     *
+     * A wide lens exaggerates the convergence of tall verticals, which is what
+     * makes a street canyon feel tall — it is the shot every city photographer
+     * reaches for and it costs nothing. The substrate is a tight space where
+     * the same lens would only distort it, and a narrow one agrees with the
+     * compression the design system already applies to that level.
+     */
+    fov: level === "surface" ? 62 : 54 - i * 3,
   };
 }
 

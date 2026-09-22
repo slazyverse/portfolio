@@ -17,10 +17,24 @@ export default defineConfig({
    * roughly 2s once the server is warm.
    */
   timeout: 60_000,
-  fullyParallel: true,
+  /**
+   * Serial, deliberately.
+   *
+   * From Phase 5 these tests drive a real WebGL city — generated textures,
+   * merged geometry, a reflection pass — and CI renders it on a software
+   * rasteriser. Run in parallel they compete for the same cores and time each
+   * other out: across several runs the failures moved between an axe audit, a
+   * landmark check and a navigation cycle, none of which had anything wrong
+   * with them and all of which passed alone.
+   *
+   * A gate that fails for a reason unrelated to the code is not a gate. This
+   * costs roughly four minutes of wall clock and buys a deterministic answer,
+   * which is the correct trade for the thing that has to be trusted.
+   */
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: 1,
   reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
   use: {
     baseURL: "http://127.0.0.1:3000",

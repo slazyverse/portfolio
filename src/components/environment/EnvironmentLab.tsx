@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMotionAllowed } from "@/components/providers/MotionProvider";
 import { LEVEL_NAME, LEVEL_ORDER, levelIndex, route } from "@/data/routes";
 import type { StratumId } from "@/data/types";
@@ -42,7 +42,19 @@ export function EnvironmentLab() {
   const [tier, setTier] = useState<QualityTier>("high");
   const [mode, setMode] = useState<EnvironmentMode>("webgl");
   const [motion, setMotion] = useState(true);
+  const [wide, setWide] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
+
+  // Escape leaves the full-bleed view. A viewer that fills the screen and can
+  // only be dismissed by finding a small button again is a trap.
+  useEffect(() => {
+    if (!wide) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setWide(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [wide]);
 
   const city = useMemo(() => generateCity(tier), [tier]);
   const budget = ENVIRONMENT_BUDGET[tier];
@@ -90,12 +102,29 @@ export function EnvironmentLab() {
             reduced
           </Choice>
         </Control>
+
+        <Control label="View">
+          <Choice active={wide} onClick={() => setWide((v) => !v)}>
+            {wide ? "exit full bleed — esc" : "full bleed"}
+          </Choice>
+        </Control>
       </div>
 
-      {/* The stage. `key` on the tier is deliberate: changing tier should tear
-          the renderer down and build a new one, which is the lifecycle this
-          page exists to exercise. */}
-      <div className="relative h-[26rem] overflow-hidden border border-[var(--hair)] bg-[var(--deep)]">
+      {/* The stage.
+
+          Full bleed matters for review rather than for show: a city judged in
+          a 400-pixel strip is a city nobody has actually looked at, and
+          composition, atmospheric depth and the read of the skyline only
+          resolve at something like the size a visitor will see. `key` on the
+          tier is deliberate — changing tier tears the renderer down and builds
+          a new one, which is the lifecycle this page exists to exercise. */}
+      <div
+        className={
+          wide
+            ? "fixed inset-0 z-[var(--z-overlay)] overflow-hidden bg-[var(--deep)]"
+            : "relative h-[34rem] overflow-hidden border border-[var(--hair)] bg-[var(--deep)]"
+        }
+      >
         <div className="env-base absolute inset-0" />
 
         {mode === "webgl" && !failure && (

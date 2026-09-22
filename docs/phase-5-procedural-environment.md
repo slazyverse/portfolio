@@ -4,8 +4,7 @@ The world engine. A generated, deterministic cyberpunk-inspired city that exists
 to serve the portfolio and is never required to read it.
 
 **Not in this phase:** the cinematic landing, the boot sequence, audio, camera
-choreography, clickable city objects. Phase 5 builds the world; Phase 6 directs
-the shot.
+choreography, clickable city objects.
 
 ---
 
@@ -13,42 +12,28 @@ the shot.
 
 > The city is a layer. The portfolio is the product.
 
-Everything below is downstream of that. The environment is `aria-hidden`, holds
-no text, receives no pointer events, contains nothing focusable, and never
-carries information that exists nowhere else. Every route renders, reads and
-indexes identically with the environment removed — which is asserted, not
-asserted-to: `tests/e2e/environment.spec.ts` denies WebGL at the
-`HTMLCanvasElement.prototype.getContext` level and walks every route, and
-another test deletes the layer outright and navigates.
+The environment is `aria-hidden`, holds no text, receives no pointer events,
+contains nothing focusable, and carries no information that exists nowhere else.
+Every route renders, reads and indexes identically with the environment removed
+— asserted by denying WebGL at `HTMLCanvasElement.prototype.getContext` and
+walking every route, and again by deleting the layer outright and navigating.
 
 ---
 
 ## Art direction
 
-**A shaft, not a skyline.**
-
-The obvious cyberpunk image is a city seen from above or across. It would have
-illustrated nothing. This site's information architecture is already four levels
-deep and its central verb is already *descend* — so the city is a vertical well
-with the four levels stacked as bands of one continuous structure, and the
-camera is inside it. The level rail in the chrome and the camera's Y position
-are now the same fact.
+**A shaft, not a skyline.** The site's information architecture is already four
+levels deep and its verb is already *descend*, so the city is a vertical well
+with the levels stacked as bands of one continuous structure, camera inside it.
+The shaft tapers as it descends (span ×1 → ×0.42) and the eye height drops with
+it, which is the same compression the design system applies to the same levels.
 
 | Level | Character | Signal |
 |---|---|---|
-| 00 Surface | Slender towers and slabs, rain, the most lit of the four | amber |
-| 01 Interface | Masts and thin towers carrying cold data spines | cold |
-| 02 Engine | Heavy, low machine blocks; horizontal pipe runs; furnace light | amber |
-| 03 Substrate | A dense server hall in near-darkness, cable trays | cold |
-
-The shaft **tapers** as it descends (`spanScale` 1 → 0.64) and the camera's eye
-height drops with it (19 → 3.6). The design system already compresses its
-vertical rhythm at each level; the camera doing the same thing physically is the
-metaphor paying rent rather than being described in copy.
-
-**Darkness is the material.** Most of this city is unlit. Amber remains the
-subject and cold remains the machine — the city gets no exemption from the
-Phase 2 semantics, and a test enumerates the colours it is allowed to draw.
+| 00 Surface | Street canyon, towers, rain, a landmark | amber |
+| 01 Interface | Masts and thin towers, cold data spines | cold |
+| 02 Engine | Heavy machine blocks, pipe runs, furnace light | amber |
+| 03 Substrate | Dense server hall, cable trays, near-darkness | cold |
 
 ---
 
@@ -56,187 +41,135 @@ Phase 2 semantics, and a test enumerates the colours it is allowed to draw.
 
 ```
 lib/environment/
-  seed.ts       deterministic PRNG, seeded from a readable string
-  types.ts      the data model — no three.js anywhere in it
+  seed.ts       deterministic PRNG
+  kit.ts        the architectural grammar — pure, no three.js
+  types.ts      the data model
   generate.ts   the city, as pure data
   camera.ts     where the camera stands at each level
-  quality.ts    what each tier may spend, and the mode resolver
-data/environment.ts   the authored navigation anchors
-components/environment/
-  Environment.tsx          mounted in the root layout; decides and persists
-  CityScene.tsx            WebGL (lazy, ssr:false)
-  CanvasAtmosphere.tsx     2D fallback, same model
-  EnvironmentLab.tsx       the /system laboratory
-  EnvironmentDiagnostics   development only, compiled out of production
+  quality.ts    what each tier may spend
+components/environment/city/
+  textures.ts   procedural canvas textures
+  palette.ts    material reflectance + the light rig
+  Buildings.tsx merged facades + instanced kit
+  World.tsx     street, skyline, rain, mist, accents, conduits
 ```
 
-### Generation is data, rendering is geometry
+### The architectural grammar
 
-The load-bearing decision. Nothing in the generator imports a rendering library,
-so the whole city can be unit-tested in Node, hermetically, in about a second —
-no WebGL, no canvas, no headless browser. Determinism becomes provable rather
-than eyeballed, and the Canvas fallback reads the *same model* as the WebGL
-path, so the fallback is the same city drawn more cheaply rather than a second
-thing that drifts.
+A building is a podium, a shaft that steps back as it rises, a crown, and the
+plant that keeps it running. Seven part kinds — mass, fin, roof unit, tank,
+mast, sign, pipe — assembled under rules rather than dice.
 
-### Anchors carry route ids, never paths
+**Procedural is not random.** Every choice is bounded by an archetype and by the
+district. The generator has latitude inside the rules; it does not get a vote on
+the rules.
 
-An anchor declares `routeId` and nothing else about where it goes. Its **level
-is not stored** — it is read from the route table, because a second copy is a
-second thing to keep in sync, which is exactly the class of defect Phase 4 found
-between the status bar and the page header. A test asserts no anchor spec
-contains a `/`.
+### Two techniques, chosen per problem
 
-### Determinism
+**Masses are merged, not instanced.** Every building volume of a facade variant
+becomes one geometry with its UVs baked at world scale, so a 27-metre podium and
+a 9-metre crown show the same size of window and the texture never stretches.
+Instancing would share one set of UVs between every copy; fixing that needs a
+shader injection into three's UV chunks, which works until three reorganises
+them and then fails silently. Merged geometry costs about sixteen thousand
+vertices for the whole city and is correct by construction.
 
-Same seed, same city, on any machine, forever. No `Math.random`, no clock, no
-DOM. That is what makes screenshots comparable between commits, makes a layout
-regression visible, and makes the tests mean something. The rain is seeded off
-its own index, so the weather is reproducible too.
+**Kit pieces are instanced.** Small, repeated, untextured — nothing to gain from
+their own UVs, everything to gain from sharing a draw call.
+
+### Textures are generated, not downloaded
+
+Ten textures drawn into a canvas at runtime from the same seeded generator that
+places the city. **Zero network bytes, zero licensing surface, deterministic,
+and resolution on demand.** The facade *tiles* up a building rather than
+stretching, so a 512 px map carries a 230-metre tower at five tiles of effective
+resolution.
+
+Full record in [asset-manifest.md](asset-manifest.md). There are no external
+assets — not "none yet", none by design.
 
 ---
 
-## Quality tiers
+## Five things that were wrong, and what they taught
 
-Consumes the Phase 2 contract (`QUALITY`) rather than inventing a second one.
-`QUALITY` still answers "may WebGL mount, what is the DPR ceiling"; this phase
-adds only "how much city".
+**The city was painted near-black.** Facade albedo used the interface tokens,
+which are near-black because they sit behind text. In a physically-based
+renderer albedo is *reflectance* — concrete returns about a third of the light
+that hits it. Every surface rendered as a flat silhouette under any lighting at
+all. Materials now have their own tokens (`--env-material`, `--env-metal`,
+`--env-glass`), and the night comes from the lighting.
 
-| | structures | lit cells | rain | conduits/level |
-|---|---:|---:|---:|---:|
-| HIGH | 260 | 3200 | 1400 | 7 |
-| BALANCED | 140 | 1100 | 0 | 4 |
-| LOW | 60 | 0 | 0 | 2 |
+**Then the lights were painted near-black too.** The rig used mood colours —
+dark browns and navies — as the *light* colours. A light whose colour is
+`#2a221c` emits almost nothing. A light's colour is its hue; its intensity is
+how much of it there is.
 
-Both budgets are **city-wide and distributed by authored share**, not split
-evenly between levels — density is character. The substrate is a server hall and
-reads as one only when crowded; the engine floor is meant to be sparse and
-heavy.
+**Then the intensities were still wrong, and arithmetic said why.** Three's
+Lambert term is `albedo × irradiance / π`; with concrete at 0.11 linear, an
+irradiance of 0.4 returns 0.014 — indistinguishable from the fog. Reading a
+night city wants roughly 0.02–0.06, so irradiance has to land near 1.1–1.5. The
+values are derived from that, not guessed.
 
-**Mobile resolves to LOW and never starts WebGL.** A coarse pointer means the
-three.js chunk is not fetched at all. Asserted on a Pixel 7 profile.
+**The CSS base layer was painting over the entire WebGL city.** Both are
+absolutely positioned with `z-index: auto`, so stacking fell to DOM order and
+resolved the wrong way. The city rendered perfectly the whole time and none of
+it was visible. Stacking is now explicit: base, renderer, scrim.
 
----
+**Windows were seven metres across.** The facade tile was 63 m wide over nine
+bays. On a fifteen-metre block that is two windows per face, each the size of a
+garage door — the single most reliable way to make architecture look like a toy.
+The tile is 23 × 62 m over 11–19 bays and 22–34 floors, which is a real window
+module and a real floor-to-floor.
 
-## Fallback chain
-
-```
-WEBGL    procedural city                 high / balanced tier, WebGL present
-CANVAS   2D silhouette of the same city  no WebGL, but headroom
-CSS      gradients only, zero JS/frame   low tier, or no drawing context
-NONE     nothing renders                 context loss, or deliberately off
-```
-
-The CSS base layer is **server-rendered and always present**, so a visitor with
-JavaScript disabled still gets atmospheric depth. The mode is resolved by one
-pure function with one table of outcomes, tested directly — not by three
-`useEffect`s that can disagree.
-
-Reduced motion is deliberately **not** an input to that function. It decides
-whether the city moves, never whether it exists.
+Plus, caught by the tests rather than the eye: **the LOD system was inert**
+(`nearRadius` 190 exceeded the world's radius, so every building was "near"),
+**texture memory was 49 MB** rather than the 12 MB the comment claimed, and
+**masts were sized absolutely**, putting 40-metre poles on 2-metre server
+cabinets.
 
 ---
 
 ## Rendering
 
-**Five draw calls**, measured off `renderer.info`, not asserted:
+**Nineteen draw calls**, measured off `renderer.info`:
 
 | | |
 |---|---|
-| structures | one `InstancedMesh`, all four levels |
-| lit cells | one `InstancedMesh`, additively blended |
-| conduits | one merged `LineSegments` |
-| ground | one merged geometry, four planes |
-| rain | one `LineSegments`, animated entirely in a vertex shader |
+| Building masses | 4 merged meshes, one per facade variant |
+| Kit pieces | 6 instanced meshes, one per kind |
+| Accents, conduits, street, skyline, glow | 5 |
+| Rain, ground mist | 2 at HIGH |
 
-Rain is line segments rather than points because rain is a streak and
-`gl_PointSize` cannot make one. The fall happens in the vertex shader, so a
-frame of rain costs one uniform write rather than fourteen hundred CPU position
-updates.
-
-**Deliberately absent:** post-processing of any kind. No bloom pass, no
-chromatic aberration, no full-screen effect stack — a bloom pipeline is a second
+**Deliberately absent:** no post-processing of any kind — no bloom pass, no
+chromatic aberration, no screen-space pipeline. A bloom chain is a second
 full-resolution render plus blur passes, which on integrated graphics costs more
-than the entire city. The glow is additive blending on the lit quads. Depth is
-fog, which is one line.
+than the entire city. No shadow maps either. Depth is fog; glow is additive
+emissive.
 
-`frameloop` is `demand` unless rain is running, and `never` while hidden. A
-still page costs nothing.
+The one expensive feature is the planar reflection on the street: HIGH only,
+surface and engine only. Its blur radius was cut from 340 to 110 after it made
+the renderer miss frames badly enough that a screenshot could not be captured.
 
----
+### Content first, atmosphere second
 
-## Four things that were wrong, and what they taught
-
-**The light budget starved a level.** A single city-wide probability gave the
-substrate 961 lit cells and the interface 60 — a level that renders as black.
-The substrate's cell grid is four times finer, so it offers an order of
-magnitude more candidates and swallowed the budget. Fixed by allocating per
-level, to authored shares. Every level now fills 95–100% of its quota.
-
-**The candidate estimate was 90% wrong.** The first per-level version still
-under-filled the engine to 53%, because `floor()` on per-structure dimensions is
-sharply non-linear at the sizes that level uses. Replaced with an exact count —
-pure arithmetic over the structures that already exist — so the probability is
-derived rather than guessed.
-
-**The camera stood inside a building.** Carving the void around the *origin* was
-not enough: the camera stands off-centre, so the nearest machine block could end
-up ten units from the lens and fill the entire frame. The void that matters is
-the one around the viewer, so the generator now owns the camera's standing point
-and keeps it clear.
-
-**Fifty navigation cycles killed the WebGL context.** The environment originally
-unmounted on the landing page and rebuilt on the way out — the tidier-looking
-choice. Repeatedly creating and destroying GPU contexts is exactly what makes a
-browser drop one, and when it did, the failure path worked perfectly: the
-environment stepped down to `none` and stayed there, permanently, for the rest
-of the session. The context is now created once, lazily, and kept; hiding stops
-the render loop instead of tearing anything down. Re-measured: one context
-across 50 cycles, zero losses, heap 28 → 42 MB and stable.
+The environment waits for `requestIdleCallback` before it builds. Generating ten
+textures and merging several thousand vertices is a few hundred milliseconds
+that belong *after* the page is readable. The CSS base is server-rendered and
+unaffected, so there is atmospheric depth from the first paint — what waits is
+the expensive part.
 
 ---
 
-## The legibility scrim
+## Quality tiers, by fidelity
 
-The one that matters most, because nothing would have caught it.
+| | structures | lit cells | rain | skyline | texture | reflections |
+|---|---:|---:|---:|---:|---:|---|
+| HIGH | 170 | 1200 | 2200 | 64 | 512 px | 256 px, blur 110 |
+| BALANCED | 110 | 520 | 900 | 38 | 384 px | — |
+| LOW | 54 | 0 | 0 | 20 | 256 px | — |
 
-A full-viewport city behind a text-heavy page means every paragraph composites
-over whatever is drawn there. Phase 2 verified all 72 ink-on-surface pairings —
-but it measured *computed CSS colours*, so it would have gone on passing while
-real rendered contrast behind a paragraph fell to roughly **2.6:1**.
-
-The first fix was a flat scrim. Working out its required strength is what showed
-the approach was wrong: protecting `--fg-low` over an amber window needs about
-90% coverage, which leaves the city at a tenth of its brightness — invisible,
-and still paid for in full.
-
-So the city is **framing, not texture**: near-opaque across the content column
-where every line of text lives, open at the outer edges where none does. Text
-keeps exactly the contrast Phase 2 measured. `tests/contrast.test.ts` now
-composites the brightest colour the renderer can draw through the scrim and
-asserts AA against every ink, with the worst pairing held above 5:1.
-
-The honest consequence, stated rather than hidden: on a narrow viewport the
-column is nearly the whole screen and the city is mostly covered. That is
-correct. A phone is where legibility matters most and where the GPU can least
-afford the work — which is also why a phone never renders this at all.
-
----
-
-## `/system` — the environment laboratory
-
-Internal, noindex, not in navigation. Switch level, tier, render mode and
-motion against a live scene; read the generated model's own numbers; see the
-anchor table resolve route ids to paths.
-
-It earns its place immediately: **the surface level is the richest of the four
-and no route can show it**, because its only route is `/`, where this layer
-defers to the existing descent scene. Without the lab, the surface city could
-not be looked at at all before Phase 6.
-
-One canvas, switched — not four previews. Four live WebGL contexts on one page
-to compare four levels would demonstrate exactly the carelessness this phase is
-meant to avoid.
+**Mobile resolves to LOW and never fetches the three.js chunk.** Asserted on a
+Pixel 7 profile.
 
 ---
 
@@ -244,37 +177,94 @@ meant to avoid.
 
 | Metric | Phase 4 | Phase 5 | Budget |
 |---|---:|---:|---:|
-| Initial JS (gz) | 189.5 KB | **189.9 KB** | 200 KB |
-| Lazy WebGL (gz) | — | **230.5 KB** | 300 KB |
-| CSS (gz) | 9.9 KB | 10.4 KB | 16 KB |
+| Initial JS (gz) | 189.5 KB | **190.0 KB** | 200 KB |
+| Deferred JS (gz) | — | **299.4 KB** | 300 KB |
+| CSS (gz) | 9.9 KB | 10.5 KB | 16 KB |
 | Dependencies | 6 | **6** | — |
-| Unit + content tests | 172 | **238** | — |
-| a11y + environment | 70 | **94** | — |
-| Draw calls (whole city) | — | **5** | — |
+| Unit + content tests | 238 | **262** | — |
+| a11y + environment | 97 | **106** | — |
+| Draw calls | — | **19** | — |
+| Texture memory (HIGH) | — | **≈13 MB** | 16 MB |
 
-**The entire environment costs +0.4 KB of initial JavaScript.** Everything that
-draws or generates a city lives behind `next/dynamic`, including the generator —
-a visitor whose device resolves to LOW downloads none of it. No new
-dependencies: no asset framework, no post-processing library, no state manager.
+**The environment adds +0.5 KB of initial JavaScript.** Its own deferred share
+is about 26.7 KB; the rest of the 299.4 KB is three.js (230.5 KB) and the
+troika text renderer used by the Phase 1 descent scene (41.2 KB), which Phase 6
+replaces.
+
+The budget gate was also fixed: it reported the *largest* non-entry chunk and
+called that "lazy WebGL", which cannot see a budget being spent in pieces. It
+now sums the whole deferred payload.
+
+### Lifecycle
+
+Fifty navigation cycles through the landing page, measured by hand: **one WebGL
+context throughout, zero losses, heap 28 → 42 MB and stable.** The automated
+test does eight cycles — accumulation, if it happens, happens immediately — and
+the fifty-cycle figure is recorded here rather than pretended to in the suite.
+
+---
+
+## Visual QA
+
+`scripts/city-shots.mjs` drives the `/system` laboratory through every level,
+tier and fallback mode and writes the frames to disk. Scripted because a review
+you cannot repeat is an anecdote: the city is deterministic, so two runs at the
+same commit produce identical images and a diff between commits is a real
+signal.
+
+The laboratory gained a **full-bleed** view for the same reason — a city judged
+in a 400-pixel strip is a city nobody has looked at.
+
+### The test suite is serial now
+
+From this phase the e2e suite drives a real WebGL city on a software rasteriser
+in CI. Run in parallel the tests time each other out, and across several runs
+the failures moved between an axe audit, a landmark check and a navigation cycle
+— none of which had anything wrong with them, all of which passed alone. A gate
+that fails for reasons unrelated to the code is not a gate. Serial costs about
+four minutes and buys a deterministic answer.
+
+---
+
+## Honest assessment against the AAA bar
+
+What it achieves: a coherent, atmospheric, believably-scaled city with an
+architectural grammar, a landmark, real materials, motivated lighting,
+atmospheric perspective, weather, a horizon, and detail spent where the camera
+is looking — at 19 draw calls, no external assets and no new dependencies.
+
+What it is not: photoreal. It reads as strong stylised game art, not as a
+high-budget production render. The specific gaps:
+
+1. **Geometry is orthogonal.** Boxes with setbacks. No bevels, no angled
+   massing, no balconies or curtain-wall relief — silhouettes are varied but the
+   vocabulary is rectilinear.
+2. **Windows emit flatly.** A lit window is a uniform rectangle, not a room with
+   depth, blinds and falloff.
+3. **Four facade textures.** Repetition is visible under inspection.
+4. **The street is empty.** No kerbs, barriers, vehicles, poles or debris — the
+   ground plane reads as a wide road rather than as a used street.
+5. **No shadow contrast.** Without shadow maps, faces are separated by normals
+   alone; the lighting is soft everywhere.
+6. **Reflections are subtle.** Most of the wet look comes from the texture.
+
+Items 4 and 1 would give the largest return next, in that order.
 
 ---
 
 ## Carried into Phase 6
 
-1. **The landing page is still untouched.** It owns its own WebGL scene and the
-   environment hides there. Phase 6 is where the two converge, and where the
-   surface city — currently visible only in the lab — becomes the first thing
-   anyone sees.
-2. **Anchors are generated but inert.** They carry stable `routeId`s and
-   positions, and nothing consumes them yet. The interaction layer is a later
-   phase; building it now would mean guessing at an input model that does not
-   exist.
-3. **The camera has a model, not a choreography.** `cameraTargetForLevel` and
-   `descentDuration` define where it stands and how long a move takes, for every
-   pair of levels. The cinematic entry is authored on top of that.
-4. **Context loss is one-way.** A lost context steps the environment down
-   permanently rather than retrying. With the churn removed this is now rare and
-   genuinely exceptional, but `webglcontextrestored` is not handled — a driver
-   reset costs the visitor their atmosphere until reload.
-5. **`aria-live` on a perpetual timer** in `AllocationGraph` is still there,
-   carried since Phase 1. Needs a design decision, not a repair.
+1. **The landing page is untouched.** It owns its own WebGL scene and the
+   environment hides there. Phase 6 is where they converge — and where the
+   41.2 KB troika chunk stops being paid for.
+2. **`/system` also stands down the global environment.** Two complete cities on
+   one page could not finish a frame.
+3. **The scrim is a judgement call.** The city is near-opaque behind the content
+   column and open at the edges. With materials now lit correctly it is markedly
+   more present than in the first draft; text keeps the contrast Phase 2
+   measured, and the bound is asserted against the material tokens.
+4. **Anchors are generated but inert.** Stable `routeId`s and positions; nothing
+   consumes them.
+5. **Context loss is one-way.** `webglcontextrestored` is not handled.
+6. **`aria-live` on a perpetual timer** in `AllocationGraph`, carried since
+   Phase 1.

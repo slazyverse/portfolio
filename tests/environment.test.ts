@@ -200,6 +200,8 @@ describe("city structure", () => {
       expect(lit / level.structures.length).toBeLessThan(0.5);
     }
 
+    // Facade windows are a texture now, so accent lights stay sparse. If this
+    // climbs it means quads have crept back into doing the facade's job.
     const litStructures = city.levels
       .flatMap((l) => [...l.structures])
       .filter((s) => s.signal !== "none").length;
@@ -345,9 +347,16 @@ describe("quality tiers", () => {
     expect(low.lights).toBe(0);
   });
 
-  it("keeps the whole city inside a handful of draw calls", () => {
+  it("keeps the whole city inside a small, fixed number of draw calls", () => {
+    // Raised from 8 when the city gained an architectural kit: seven part
+    // kinds, plus lit cells, conduits, ground, skyline, rain and ground FX.
+    //
+    // The number that matters is that it is *fixed* — it does not grow with
+    // the size of the city. Every building on every level shares the same
+    // seven instanced meshes, so a denser city costs instances and never draw
+    // calls. A ceiling here is what stops someone "just adding a mesh".
     for (const tier of TIERS) {
-      expect(generateCity(tier).stats.drawCalls).toBeLessThanOrEqual(8);
+      expect(generateCity(tier).stats.drawCalls).toBeLessThanOrEqual(16);
     }
   });
 });
@@ -491,7 +500,19 @@ describe("the environment is never required to reach content", () => {
     for (const level of city.levels) {
       for (const s of level.structures) {
         expect(Object.keys(s).sort()).toEqual(
-          ["id", "kind", "level", "position", "rotation", "signal", "size"].sort(),
+          [
+            "id",
+            "kind",
+            "level",
+            "position",
+            "rotation",
+            "signal",
+            "size",
+            "detail",
+            "variant",
+            "wear",
+            "parts",
+          ].sort(),
         );
       }
     }
