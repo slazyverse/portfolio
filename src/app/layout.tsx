@@ -3,6 +3,7 @@ import { Archivo, JetBrains_Mono } from "next/font/google";
 import { SITE } from "@/data/site";
 import { Footer } from "@/components/layout/Footer";
 import { SystemChrome } from "@/components/chrome/SystemChrome";
+import { Environment } from "@/components/environment/Environment";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { RouteAnnouncer } from "@/components/layout/RouteAnnouncer";
 import "./globals.css";
@@ -147,6 +148,13 @@ export default function RootLayout({
         </a>
 
         <MotionProvider>
+          {/* The procedural environment. Mounted in the layout for the same
+              reason the chrome is — it persists across navigation, so the city
+              is generated once and a route change moves the camera rather than
+              rebuilding the world. Decorative and inert by construction:
+              aria-hidden, no pointer events, nothing focusable, no content. */}
+          <Environment />
+
           {/* Announces route changes and moves focus to the main region.
               Client navigation does not reload the document, so without this a
               screen-reader user hears nothing when the route changes. */}

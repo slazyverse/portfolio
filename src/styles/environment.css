@@ -1,0 +1,211 @@
+/* ============================================================================
+   SUBSTRATE — ENVIRONMENT LAYER
+   ============================================================================
+
+   The environment sits behind everything and touches nothing. Three rules hold
+   that true, and they are all here rather than spread across components:
+
+     1. it never receives a pointer event
+     2. it never participates in layout
+     3. it never rises above content
+
+   The CSS base layer is the floor of the fallback chain. It is server-rendered
+   and costs no JavaScript at all, so a visitor with WebGL disabled, JavaScript
+   off, or a device that fails every probe still gets atmospheric depth rather
+   than a flat black page.
+   ========================================================================= */
+
+.env {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-base);
+  pointer-events: none;
+  overflow: hidden;
+  /* Its own layer. Without this the fixed canvas is repainted by the compositor
+     on every scroll of the content above it, which is the single most
+     expensive mistake a full-viewport background can make. */
+  contain: strict;
+}
+
+/* --- The legibility scrim -------------------------------------------------
+   Non-negotiable, and the reason it exists is worth writing down.
+
+   The environment is a full-viewport layer behind a text-heavy page, so every
+   paragraph is composited over whatever the city happens to be drawing there.
+   Phase 2 verified every foreground/background pairing on this site — but it
+   measured computed CSS colours, which means it would have gone on passing
+   while the real, rendered contrast behind a paragraph fell through the floor.
+   An amber window cell sitting directly behind body copy took it to roughly
+   2.6:1, and nothing in the suite would have said a word.
+
+   The first attempt was a flat scrim across the whole viewport, and working
+   out its required strength is what showed the approach was wrong: protecting
+   `--fg-low` over an amber window needs about ninety percent coverage, which
+   leaves the city at a tenth of its brightness — invisible, and still paid for
+   in full. Tuning that number further would have been optimising the wrong
+   shape.
+
+   So the city is framing rather than texture. It is near-opaque across the
+   content column, where every line of text lives, and opens up at the outer
+   edges, where none does. Text keeps the contrast Phase 2 measured; the
+   environment gets the margins, and on a wide display the margins are
+   substantial.
+
+   The honest consequence, stated rather than hidden: on a narrow viewport the
+   column occupies nearly the whole screen and the city is mostly covered.
+   That is the correct behaviour. A phone is where legibility matters most and
+   where the GPU can least afford the work — which is also why a phone resolves
+   to the CSS tier and never renders this at all. */
+
+.env::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--deep) calc(var(--env-scrim-edge) * 100%), transparent) 0%,
+    color-mix(in srgb, var(--deep) calc(var(--env-scrim) * 100%), transparent) 15%,
+    color-mix(in srgb, var(--deep) calc(var(--env-scrim) * 100%), transparent) 85%,
+    color-mix(in srgb, var(--deep) calc(var(--env-scrim-edge) * 100%), transparent) 100%
+  );
+}
+
+/* Hidden, but still holding its context. See `Environment` for why the canvas
+   is not unmounted here. `visibility` rather than `display` because removing
+   the box would resize the canvas to zero and force a reallocation on return. */
+.env[data-active="false"] .env-canvas,
+.env[data-active="false"] .env-base {
+  visibility: hidden;
+}
+
+/* --- Stacking inside the environment --------------------------------------
+   Stated explicitly, because leaving it to DOM order shipped a bug: the base
+   layer and the renderer are both absolutely positioned with `z-index: auto`,
+   and the gradient ended up painting over the entire WebGL city. The city
+   rendered perfectly the whole time and nobody could see any of it.
+
+   Three layers, in order: the CSS base at the back, the renderer over it, the
+   legibility scrim over both. */
+
+.env-base {
+  z-index: 0;
+}
+
+/* The renderer's container.
+
+   `relative`, not `absolute`. React Three Fiber gives its own container
+   `position: relative; width: 100%; height: 100%` and measures that element to
+   size the drawing buffer — overriding it to `absolute; inset: 0` left that
+   measurement at zero, so the canvas stayed at the HTML default of 300x150
+   inside a container of 839x542 and the renderer drew nothing at all.
+
+   The parent supplies the size in both places this is used: the environment
+   layer is `fixed; inset: 0`, and the laboratory stage has an explicit height.
+   So a plain full-size block is all this needs to be. */
+
+.env-canvas {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- The CSS base ----------------------------------------------------------
+   Two radial washes and a vertical gradient. Deliberately almost invisible:
+   it reads as depth under the content rather than as a picture behind it.
+
+   The colours are the level tokens, so descending changes the base without
+   this file knowing anything about levels — the same mechanism the rest of the
+   design system uses. */
+
+.env-base {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      120% 70% at 50% 110%,
+      color-mix(in srgb, var(--cold) 7%, transparent) 0%,
+      transparent 62%
+    ),
+    radial-gradient(
+      80% 50% at 82% -10%,
+      color-mix(in srgb, var(--accent) 5%, transparent) 0%,
+      transparent 58%
+    ),
+    linear-gradient(to bottom, transparent 0%, var(--deep) 100%);
+  opacity: 0.85;
+}
+
+/* The WebGL scene supplies its own depth, so the base recedes under it rather
+   than compounding with it. */
+.env[data-mode="webgl"] .env-base {
+  opacity: 0.45;
+}
+
+/* --- Reduced motion --------------------------------------------------------
+   There is nothing to suppress here. The base layer has no animation, the
+   Canvas fallback has no render loop, and the WebGL scene resolves motion in
+   JavaScript — rain is not generated and the camera snaps rather than eases.
+
+   Stated explicitly because "no rule needed" and "rule forgotten" look
+   identical in a stylesheet. */
+
+/* --- Forced colors ---------------------------------------------------------
+   In a forced-colors context the user has asked the system to decide what
+   colour means. An atmospheric wash cannot survive that translation and would
+   only add noise behind text, so the environment removes itself entirely. */
+
+@media (forced-colors: active) {
+  .env {
+    display: none;
+  }
+}
+
+/* Printing a background gradient wastes ink to no purpose. */
+@media print {
+  .env {
+    display: none;
+  }
+}
+
+/* --- Development diagnostics ---------------------------------------------- */
+
+.env-diagnostics {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: var(--z-overlay);
+  pointer-events: none;
+  min-width: 15rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--hair-strong);
+  background: color-mix(in srgb, var(--deep) 92%, transparent);
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--fg-mid);
+}
+
+.env-diagnostics-title {
+  margin-bottom: 0.5rem;
+  color: var(--cold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.env-diagnostics dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.env-diagnostics dt {
+  color: var(--fg-low);
+}
+
+.env-diagnostics dd {
+  color: var(--fg-hi);
+}

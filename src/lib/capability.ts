@@ -47,6 +47,93 @@ export const webglStore = {
   },
 };
 
+/* --------------------------------------------------------------- Canvas --- */
+
+let canvas2dCache: boolean | null = null;
+
+function probeCanvas2d(): boolean {
+  try {
+    return !!document.createElement("canvas").getContext("2d");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A 2D context, which the environment falls back to when WebGL is unavailable.
+ *
+ * Almost always true, and probed anyway rather than assumed: it is false under
+ * some hardened browser configurations and canvas-blocking extensions, and the
+ * whole point of a fallback chain is that each link is verified rather than
+ * hoped for. The CSS layer below it needs no probe at all.
+ */
+export const canvas2dStore = {
+  subscribe: noopSubscribe,
+  getSnapshot(): boolean {
+    canvas2dCache ??= probeCanvas2d();
+    return canvas2dCache;
+  },
+  getServerSnapshot(): boolean {
+    return false;
+  },
+};
+
+/* ------------------------------------------------------------- Idleness --- */
+
+let idle = false;
+let idleScheduled = false;
+const idleListeners = new Set<() => void>();
+
+function scheduleIdle(): void {
+  if (idleScheduled || idle) return;
+  idleScheduled = true;
+
+  const flip = () => {
+    idle = true;
+    for (const listener of idleListeners) listener();
+  };
+
+  // `requestIdleCallback` where it exists, a timer where it does not. The
+  // timeout matters more than the idleness: on a page that never goes idle the
+  // environment should still arrive, just last.
+  const ric = (window as Window & {
+    requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+  }).requestIdleCallback;
+
+  if (typeof ric === "function") ric(flip, { timeout: 2000 });
+  else window.setTimeout(flip, 400);
+}
+
+/**
+ * Whether the page has finished the work that matters.
+ *
+ * The environment is decoration, and decoration does not get to compete with
+ * content for the main thread. Building the city means generating ten textures
+ * and merging several thousand vertices — a few hundred milliseconds that
+ * belong *after* the page is readable, not during.
+ *
+ * This is a store rather than an effect for the same reason the capability
+ * probes are: it is a one-way fact about the document that the server cannot
+ * know, and `useState` filled in by an effect would be a second render to
+ * deliver a value that was always going to arrive.
+ *
+ * The CSS base layer is server-rendered and unaffected, so the page still has
+ * atmospheric depth from the first paint — what waits is the expensive part.
+ */
+export const idleStore = {
+  subscribe(listener: () => void): () => void {
+    idleListeners.add(listener);
+    scheduleIdle();
+    return () => idleListeners.delete(listener);
+  },
+  getSnapshot(): boolean {
+    return idle;
+  },
+  getServerSnapshot(): boolean {
+    return false;
+  },
+};
+
 /* ---------------------------------------------------------- Quality tiers --- */
 
 /**
@@ -102,3 +189,30 @@ export function detectQualityTier(): QualityTier {
   if (cores <= 4 || memory <= 4) return "balanced";
   return "high";
 }
+
+let tierCache: QualityTier | null = null;
+
+/**
+ * The resolved tier, as a store.
+ *
+ * The same shape as the WebGL and canvas probes, and for the same reason: this
+ * is a fact about the machine, measured once, that React cannot know while
+ * rendering on the server. A store with a server snapshot is how that is
+ * expressed — `useState` filled in by an effect would be a second render
+ * triggered by a value that was never going to change.
+ *
+ * The server snapshot is `low` deliberately. It is the cheapest tier, so the
+ * hydrating markup is the one that asks least of the device, and anything
+ * richer is an upgrade applied after hydration rather than a downgrade
+ * retracted during it.
+ */
+export const qualityTierStore = {
+  subscribe: noopSubscribe,
+  getSnapshot(): QualityTier {
+    tierCache ??= detectQualityTier();
+    return tierCache;
+  },
+  getServerSnapshot(): QualityTier {
+    return "low";
+  },
+};

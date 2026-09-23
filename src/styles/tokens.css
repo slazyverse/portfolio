@@ -108,6 +108,33 @@
 
   /* --- Geometry. Maximum radius is 2px, everywhere, permanently. Depth
          comes from border hierarchy and surface delta, never from shadow. -- */
+  /* Material reflectance for the procedural environment.
+
+     These are physical values, not interface colours, and that distinction is
+     the whole point of them existing separately. Albedo in a physically-based
+     renderer is how much light a surface returns: concrete returns a good
+     third of it. Painting facades with the near-black interface tokens made
+     the city render as flat silhouettes under any light at all — technically
+     shaded, and completely wrong.
+
+     The city is dark because it is lit dimly, which is how a night scene is
+     actually made. It is not dark because its concrete is black.
+
+     Bounded by the contrast suite exactly as the two signals are, since these
+     are pixels that can end up behind text. */
+  --env-material: #5d6675;
+  --env-metal: #6f7988;
+  --env-glass: #101722;
+
+  /* How much of the procedural environment is allowed through, behind the
+     content column and at the outer edges respectively.
+
+     The centre value is asserted against the worst-case environment pixel in
+     the contrast suite. Lowering it puts text at risk; the edge value carries
+     no text and is a composition choice. */
+  --env-scrim: 0.94;
+  --env-scrim-edge: 0.25;
+
   --radius: 2px;
   --hair-w: 1px;
   --notch: 10px;

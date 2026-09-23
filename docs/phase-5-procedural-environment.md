@@ -1,0 +1,674 @@
+# Phase 5 — Procedural Environment
+
+The world engine. A generated, deterministic cyberpunk-inspired city that exists
+to serve the portfolio and is never required to read it.
+
+**Not in this phase:** the cinematic landing, the boot sequence, audio, camera
+choreography, clickable city objects.
+
+---
+
+## The one rule
+
+> The city is a layer. The portfolio is the product.
+
+The environment is `aria-hidden`, holds no text, receives no pointer events,
+contains nothing focusable, and carries no information that exists nowhere else.
+Every route renders, reads and indexes identically with the environment removed
+— asserted by denying WebGL at `HTMLCanvasElement.prototype.getContext` and
+walking every route, and again by deleting the layer outright and navigating.
+
+---
+
+## Art direction
+
+**A shaft, not a skyline.** The site's information architecture is already four
+levels deep and its verb is already *descend*, so the city is a vertical well
+with the levels stacked as bands of one continuous structure, camera inside it.
+The shaft tapers as it descends (span ×1 → ×0.42) and the eye height drops with
+it, which is the same compression the design system applies to the same levels.
+
+| Level | Character | Signal |
+|---|---|---|
+| 00 Surface | Street canyon, towers, rain, a landmark | amber |
+| 01 Interface | Masts and thin towers, cold data spines | cold |
+| 02 Engine | Heavy machine blocks, pipe runs, furnace light | amber |
+| 03 Substrate | Dense server hall, cable trays, near-darkness | cold |
+
+---
+
+## Architecture
+
+```
+lib/environment/
+  seed.ts       deterministic PRNG
+  kit.ts        the architectural grammar — pure, no three.js
+  types.ts      the data model
+  generate.ts   the city, as pure data
+  camera.ts     where the camera stands at each level
+  quality.ts    what each tier may spend
+components/environment/city/
+  textures.ts   procedural canvas textures
+  palette.ts    material reflectance + the light rig
+  Buildings.tsx merged facades + instanced kit
+  World.tsx     street, skyline, rain, mist, accents, conduits
+```
+
+### The architectural grammar
+
+A building is a podium, a shaft that steps back as it rises, a crown, and the
+plant that keeps it running. Seven part kinds — mass, fin, roof unit, tank,
+mast, sign, pipe — assembled under rules rather than dice.
+
+**Procedural is not random.** Every choice is bounded by an archetype and by the
+district. The generator has latitude inside the rules; it does not get a vote on
+the rules.
+
+### Two techniques, chosen per problem
+
+**Masses are merged, not instanced.** Every building volume of a facade variant
+becomes one geometry with its UVs baked at world scale, so a 27-metre podium and
+a 9-metre crown show the same size of window and the texture never stretches.
+Instancing would share one set of UVs between every copy; fixing that needs a
+shader injection into three's UV chunks, which works until three reorganises
+them and then fails silently. Merged geometry costs about sixteen thousand
+vertices for the whole city and is correct by construction.
+
+**Kit pieces are instanced.** Small, repeated, untextured — nothing to gain from
+their own UVs, everything to gain from sharing a draw call.
+
+### Textures are generated, not downloaded
+
+Ten textures drawn into a canvas at runtime from the same seeded generator that
+places the city. **Zero network bytes, zero licensing surface, deterministic,
+and resolution on demand.** The facade *tiles* up a building rather than
+stretching, so a 512 px map carries a 230-metre tower at five tiles of effective
+resolution.
+
+Full record in [asset-manifest.md](asset-manifest.md). There are no external
+assets — not "none yet", none by design.
+
+---
+
+## Five things that were wrong, and what they taught
+
+**The city was painted near-black.** Facade albedo used the interface tokens,
+which are near-black because they sit behind text. In a physically-based
+renderer albedo is *reflectance* — concrete returns about a third of the light
+that hits it. Every surface rendered as a flat silhouette under any lighting at
+all. Materials now have their own tokens (`--env-material`, `--env-metal`,
+`--env-glass`), and the night comes from the lighting.
+
+**Then the lights were painted near-black too.** The rig used mood colours —
+dark browns and navies — as the *light* colours. A light whose colour is
+`#2a221c` emits almost nothing. A light's colour is its hue; its intensity is
+how much of it there is.
+
+**Then the intensities were still wrong, and arithmetic said why.** Three's
+Lambert term is `albedo × irradiance / π`; with concrete at 0.11 linear, an
+irradiance of 0.4 returns 0.014 — indistinguishable from the fog. Reading a
+night city wants roughly 0.02–0.06, so irradiance has to land near 1.1–1.5. The
+values are derived from that, not guessed.
+
+**The CSS base layer was painting over the entire WebGL city.** Both are
+absolutely positioned with `z-index: auto`, so stacking fell to DOM order and
+resolved the wrong way. The city rendered perfectly the whole time and none of
+it was visible. Stacking is now explicit: base, renderer, scrim.
+
+**Windows were seven metres across.** The facade tile was 63 m wide over nine
+bays. On a fifteen-metre block that is two windows per face, each the size of a
+garage door — the single most reliable way to make architecture look like a toy.
+The tile is 23 × 62 m over 11–19 bays and 22–34 floors, which is a real window
+module and a real floor-to-floor.
+
+Plus, caught by the tests rather than the eye: **the LOD system was inert**
+(`nearRadius` 190 exceeded the world's radius, so every building was "near"),
+**texture memory was 49 MB** rather than the 12 MB the comment claimed, and
+**masts were sized absolutely**, putting 40-metre poles on 2-metre server
+cabinets.
+
+---
+
+## Rendering
+
+**Nineteen draw calls**, measured off `renderer.info`:
+
+| | |
+|---|---|
+| Building masses | 4 merged meshes, one per facade variant |
+| Kit pieces | 6 instanced meshes, one per kind |
+| Accents, conduits, street, skyline, glow | 5 |
+| Rain, ground mist | 2 at HIGH |
+
+**Deliberately absent:** no post-processing of any kind — no bloom pass, no
+chromatic aberration, no screen-space pipeline. A bloom chain is a second
+full-resolution render plus blur passes, which on integrated graphics costs more
+than the entire city. No shadow maps either. Depth is fog; glow is additive
+emissive.
+
+The one expensive feature is the planar reflection on the street: HIGH only,
+surface and engine only. Its blur radius was cut from 340 to 110 after it made
+the renderer miss frames badly enough that a screenshot could not be captured.
+
+### Content first, atmosphere second
+
+The environment waits for `requestIdleCallback` before it builds. Generating ten
+textures and merging several thousand vertices is a few hundred milliseconds
+that belong *after* the page is readable. The CSS base is server-rendered and
+unaffected, so there is atmospheric depth from the first paint — what waits is
+the expensive part.
+
+---
+
+## Quality tiers, by fidelity
+
+| | structures | lit cells | rain | skyline | texture | reflections |
+|---|---:|---:|---:|---:|---:|---|
+| HIGH | 170 | 1200 | 2200 | 64 | 512 px | 256 px, blur 110 |
+| BALANCED | 110 | 520 | 900 | 38 | 384 px | — |
+| LOW | 54 | 0 | 0 | 20 | 256 px | — |
+
+**Mobile resolves to LOW and never fetches the three.js chunk.** Asserted on a
+Pixel 7 profile.
+
+---
+
+## Results
+
+| Metric | Phase 4 | Phase 5 | Budget |
+|---|---:|---:|---:|
+| Initial JS (gz) | 189.5 KB | **190.0 KB** | 200 KB |
+| Deferred JS (gz) | — | **299.4 KB** | 300 KB |
+| CSS (gz) | 9.9 KB | 10.5 KB | 16 KB |
+| Dependencies | 6 | **6** | — |
+| Unit + content tests | 238 | **262** | — |
+| a11y + environment | 97 | **106** | — |
+| Draw calls | — | **19** | — |
+| Texture memory (HIGH) | — | **≈13 MB** | 16 MB |
+
+**The environment adds +0.5 KB of initial JavaScript.** Its own deferred share
+is about 26.7 KB; the rest of the 299.4 KB is three.js (230.5 KB) and the
+troika text renderer used by the Phase 1 descent scene (41.2 KB), which Phase 6
+replaces.
+
+The budget gate was also fixed: it reported the *largest* non-entry chunk and
+called that "lazy WebGL", which cannot see a budget being spent in pieces. It
+now sums the whole deferred payload.
+
+### Lifecycle
+
+Fifty navigation cycles through the landing page, measured by hand: **one WebGL
+context throughout, zero losses, heap 28 → 42 MB and stable.** The automated
+test does eight cycles — accumulation, if it happens, happens immediately — and
+the fifty-cycle figure is recorded here rather than pretended to in the suite.
+
+---
+
+## Visual QA
+
+`scripts/city-shots.mjs` drives the `/system` laboratory through every level,
+tier and fallback mode and writes the frames to disk. Scripted because a review
+you cannot repeat is an anecdote: the city is deterministic, so two runs at the
+same commit produce identical images and a diff between commits is a real
+signal.
+
+The laboratory gained a **full-bleed** view for the same reason — a city judged
+in a 400-pixel strip is a city nobody has looked at.
+
+### The test suite is serial now
+
+From this phase the e2e suite drives a real WebGL city on a software rasteriser
+in CI. Run in parallel the tests time each other out, and across several runs
+the failures moved between an axe audit, a landmark check and a navigation cycle
+— none of which had anything wrong with them, all of which passed alone. A gate
+that fails for reasons unrelated to the code is not a gate. Serial costs about
+four minutes and buys a deterministic answer.
+
+---
+
+## Honest assessment against the AAA bar
+
+What it achieves: a coherent, atmospheric, believably-scaled city with an
+architectural grammar, a landmark, real materials, motivated lighting,
+atmospheric perspective, weather, a horizon, and detail spent where the camera
+is looking — at 19 draw calls, no external assets and no new dependencies.
+
+What it is not: photoreal. It reads as strong stylised game art, not as a
+high-budget production render. The specific gaps:
+
+1. **Geometry is orthogonal.** Boxes with setbacks. No bevels, no angled
+   massing, no balconies or curtain-wall relief — silhouettes are varied but the
+   vocabulary is rectilinear.
+2. **Windows emit flatly.** A lit window is a uniform rectangle, not a room with
+   depth, blinds and falloff.
+3. **Four facade textures.** Repetition is visible under inspection.
+4. **The street is empty.** No kerbs, barriers, vehicles, poles or debris — the
+   ground plane reads as a wide road rather than as a used street.
+5. **No shadow contrast.** Without shadow maps, faces are separated by normals
+   alone; the lighting is soft everywhere.
+6. **Reflections are subtle.** Most of the wet look comes from the texture.
+
+Items 4 and 1 would give the largest return next, in that order.
+
+---
+
+## Carried into Phase 6
+
+1. **The landing page is untouched.** It owns its own WebGL scene and the
+   environment hides there. Phase 6 is where they converge — and where the
+   41.2 KB troika chunk stops being paid for.
+2. **`/system` also stands down the global environment.** Two complete cities on
+   one page could not finish a frame.
+3. **The scrim is a judgement call.** The city is near-opaque behind the content
+   column and open at the edges. With materials now lit correctly it is markedly
+   more present than in the first draft; text keeps the contrast Phase 2
+   measured, and the bound is asserted against the material tokens.
+4. **Anchors are generated but inert.** Stable `routeId`s and positions; nothing
+   consumes them.
+5. **Context loss is one-way.** `webglcontextrestored` is not handled.
+6. **`aria-live` on a perpetual timer** in `AllocationGraph`, carried since
+   Phase 1.
+
+
+---
+
+# Phase 5B — art-direction pass
+
+The engine from Phase 5 is unchanged. What changed is what it builds.
+
+Full art direction in [city-world.md](city-world.md); this section records the
+engineering and the mistakes.
+
+## The world now has a social structure
+
+Every building carries a **district** — corporate, commercial, residential,
+industrial, undercity — assigned by distance from the central shaft rather than
+by chance. Maintenance standard, signage density, storefronts, exposed services,
+balconies and street clutter all fall out of that one field, so inequality is a
+placement rule rather than a mood. Buildings over 34 m also carry an **owner**,
+one of five invented corporations, chosen by district.
+
+Nothing in the composer decides what class a building belongs to. It reads the
+district profile and spends accordingly.
+
+## Architecture
+
+Three new kit pieces, all instanced: `platform` (relief bands, setback shelves,
+balconies), `bridge` (skybridges between genuinely close neighbours), `prop`
+(cabinets, bollards, railings, vents at human scale). Plus a signage hierarchy
+of four tiers, each with a host-size requirement.
+
+Windows became holes rather than rectangles: a shadowed reveal, inset glass, a
+lit sill and a bright mullion, then one of four interior lighting states — full
+pane, blind partly drawn, dim light from deeper in the room, or a partition with
+one side lit. Uniform rectangles were the strongest remaining tell.
+
+Facade repetition is broken by a per-building tint baked into the merged
+geometry — one float3 per vertex, no extra draw call.
+
+## The city is occupied
+
+Traffic, steam and contact shading, all GPU-animated from one time uniform.
+Nothing is simulated: a vehicle's position is a function of time, so the CPU
+writes one uniform per frame.
+
+## The reflection pass is gone
+
+Phase 5 bought a planar reflection from drei. It was a second full render of the
+scene, and when Phase 5B pushed the deferred bundle to **306 KB against a 300 KB
+ceiling**, it was the right thing to lose.
+
+What replaced it is cheaper and reads better: the light that *causes* a
+reflection, painted straight onto the road. On a wet street what you actually
+see is colour bleeding down from every sign, not a mirrored building — and a
+pool of light under a source is one additive quad.
+
+With the reflector gone and drei's `PerspectiveCamera` replaced by a plain
+three.js camera, **the environment has no dependency on drei at all.**
+
+## The budget metric was wrong — twice
+
+Worth recording because the second mistake looked like a fix for the first.
+
+It began as *the largest chunk not in the entry*, which was three.js. That
+cannot see a budget spent in pieces. Phase 5 changed it to *the sum of every
+chunk not in the entry* — which over-corrected badly, because in the App Router
+**every route's** page chunk is absent from the home page's HTML. That sum was
+counting `/system`, `/record`, `/contracts` and the home page's own text
+renderer as though they were the environment. It read 302 KB for an environment
+that is 240.
+
+It now measures the environment: three.js plus the chunks that only load when a
+city is drawn, identified by content markers that survive minification. The full
+deferred figure is still printed underneath, unbudgeted, so nothing hides behind
+the narrower definition.
+
+**This metric was corrected while it was red.** Both figures are in the report.
+
+## Three more bugs the work surfaced
+
+**Masts were sized off footprint depth and rendered fully emissive.** A server
+rack is 2 m wide and 11 m deep, so `max(w, d)` gave the substrate 40-metre masts
+on 5-metre cabinets — and because the mast material was emissive, each drew as a
+solid glowing bar. Masts are sized against host *height* now, they are metal,
+and the obstruction light is a separate one-metre emissive part at the tip.
+
+**Light pools stacked into a flare.** A commercial frontage carries a storefront
+band plus several shop signs, and every one wanted its own additive pool in the
+same square metre of road. Capped at two per building.
+
+**Traffic read as glowing planks.** Streaks up to eleven metres long on three
+elevated lanes, additively blended, at a camera angle where the lane tangent is
+nearly horizontal. Shorter, dimmer, one elevated lane.
+
+## Results
+
+| Metric | Phase 5 | Phase 5B | Budget |
+|---|---:|---:|---:|
+| Initial JS (gz) | 189.9 KB | **190.2 KB** | 200 KB |
+| Lazy environment (gz) | — | **240.0 KB** | 300 KB |
+| All deferred JS (gz) | 299.4 KB | 302.7 KB | not budgeted |
+| CSS (gz) | 10.4 KB | 10.5 KB | 16 KB |
+| Dependencies | 6 | **6** | — |
+| Unit + content tests | 262 | **262** | — |
+| a11y + environment | 106 | **106** | — |
+
+## Honest assessment
+
+Materially better than Phase 5: the city has a social structure that reads
+without copy, windows have depth, the street is occupied, buildings are grounded
+by contact shading, and there is a landmark with a podium complex around it.
+
+Still not photoreal, and the gaps are specific:
+
+1. **Geometry is orthogonal.** Boxes with setbacks, relief bands and balconies.
+   No bevels, no angled massing, no curtain-wall relief.
+2. **The substrate composition is weak.** It reads as a distant industrial
+   skyline rather than an enclosed hall, and the empty floor takes roughly half
+   the frame.
+3. **Four facade textures.** Per-building tint helps; close inspection still
+   finds the repeat.
+4. **No shadow contrast beyond contact shade.** Faces are separated by normals.
+5. **The elevated lane is thin.** One lane of transit does not read as a transit
+   *system*.
+6. **Corporate identity is structural, not graphic.** Marks are declared but
+   signage renders as coloured panels, not as shapes.
+
+Items 2 and 1 give the largest return next.
+
+
+---
+
+# Phase 5C - world-building and art direction
+
+Phase 5B gave the city a social structure. This pass gave it a *shot*.
+
+The review that opened it named seven weaknesses, and six of them turned out to
+have the same shape: the engine was right and what it was being asked to build
+was not. Nothing in the renderer was rewritten.
+
+## The composition was the bug
+
+The single largest finding was that the camera looked at a miniature skyline
+rather than standing in a city, and the cause was one constant.
+
+The camera kept a **circular** clearance of sixty-six metres. Nothing could
+stand nearer than that in any direction, so there was no foreground, no
+occlusion, and nothing at human scale to measure a two-hundred-metre tower
+against. A city with no foreground reads as a model on a table whatever its
+dimensions say.
+
+A street is the opposite of a circle: open along its length, closed across it.
+The clearance is a **cone** now - wide and deep down the line of sight, shallow
+at the flanks - so buildings crowd to within about thirty metres at the edges
+of the frame while the view down the shaft stays open.
+
+Then the second half of the same problem. With the clearance opened, the
+foreground still was not visible, because of arithmetic nobody had done: the
+lower edge of the frame sits half the vertical field below wherever the camera
+points, and at a nine-metre eye pitched sixteen degrees up, **the ground did
+not enter the shot until thirty-three metres out**. Every barrier, cabinet,
+cable drop and parked vehicle the level generates lives between eight and
+twenty-five. The whole foreground was being built below the bottom of the
+picture. The surface camera now stands at six and a half metres and looks
+roughly level; the towers converge anyway, because convergence comes from the
+wide lens and from standing between hundred-metre buildings thirty metres
+apart.
+
+## `fixtures`: the geometry that belongs to the shot
+
+Three things the procedural grid cannot produce, because each is a decision
+about the *shot* rather than about a building. They live on the level rather
+than on a structure, and they render through exactly the same instanced meshes
+as every building's kit, so none of them costs a draw call.
+
+- **The foreground set** - barriers, cabinets, a drain, cables, parked
+  vehicles, a framing column running out of the top of frame, and a gantry
+  crossing overhead. Placed in *street coordinates* - along the line of sight
+  and across it - which matters more than it sounds: the first version placed
+  everything by bearing, and a bearing of one radian is sixty degrees off axis,
+  which at this lens is outside the frame entirely. Half the foreground was
+  being generated where nobody could see it.
+- **The transit spine** - a guideway, its columns and one station, dead ahead
+  on the camera's own sight line. The elevated traffic lane now reads its
+  radius and height from the same constants the deck is built from, so the
+  vehicles are on the track by construction rather than by coincidence.
+- **The enclosure** - ceiling plates, piers, duct runs and strip lighting on
+  the two levels that are interiors. This is what turned the substrate from a
+  distant industrial skyline into a hall you are standing inside, and it took
+  one move: something above the camera. The piers are what state the span of
+  the room, and the span of the room is what makes it a megastructure rather
+  than a basement.
+
+## Angle
+
+Every mass in this city is a box, and a city of axis-aligned boxes reads as
+generated however good its textures are. What it was missing was not detail but
+**angle**.
+
+One extra number per part - `tilt` - buys diagonal braces, canted service
+modules, leaning masts, sloped awnings, chevron marks, cantilever struts and
+escalator runs. It costs nothing at render time, because a quaternion was
+already being composed per instance.
+
+Spending it is governed by five **grammars**, one per district, each a small
+table of architectural rules: how deeply the shaft steps back, how much
+accretion it carries, whether it is externally braced, what sits on top. A
+corporate megastructure is one client and one architect; a patched undercity
+structure is one original volume with three generations of addition bolted on
+at whatever angle the bracket allowed. Same five rules, parameterised.
+
+## Shadow, without a shadow map
+
+The review named weak shadow hierarchy, and the honest answer was not a shadow
+map - that is another full render of the scene, which this environment has
+refused throughout - but the *fact* a shadow map would have produced: in a
+dense city, the bottom of a canyon receives almost no sky.
+
+So occlusion is baked into the vertex colours, as a function of two things
+already known at build time: how far up a facade a vertex sits, and how
+enclosed its footprint is by its neighbours (a coarse occupancy grid, weighted
+by height). A tower in the open is barely touched; a street-level wall in the
+densest part of a district loses half its light; downward-facing surfaces lose
+more again. District reflectance multiplies on top of that, so corporate fabric
+returns more light than undercity fabric - which is the economic hierarchy
+expressed as albedo.
+
+Contact shade now extends under everything elevated as well, spreading wider
+and softer with height, which is what a diffuse-sky shadow does.
+
+## Six things that were wrong, and what they taught
+
+1. **A thirty-four-metre beam down the line of sight.** The overhead gantry was
+   given an extra quarter turn "to cross the street" and did the opposite - it
+   rendered as a black spike straight through the middle of the hero tower. A
+   rotation about Y sends a box's local +X to `(cos, -sin)`, so negating the
+   bearing already aligns X with the street; the length belonged in Z all
+   along. Visual review caught this in one frame; no test would have.
+2. **Street furniture made of polystyrene.** Every kit piece took the metal
+   token at full value, so bollards, decks and railings came out as the
+   brightest surfaces in a night city. Kinds have a material `value` now -
+   painted street furniture returns about half what a galvanised roof unit
+   does.
+3. **A structure share of 1.02.** The four levels' shares summed to just over
+   one, which nobody noticed while the circular clearance meant no level could
+   place its full allocation anyway. Opening the flanks made the two percent
+   real and the city went three structures over a cap it had appeared to
+   respect for two phases. A budget that is only met because the generator
+   keeps failing is not a budget.
+4. **A corporation that never existed.** Ownership required thirty-four metres
+   of height; the engine level tops out at thirty-eight, so the corporation
+   that owns industrial plant appeared nowhere in the city. Two further gates -
+   marks only on lit buildings, motifs only on lit buildings - compounded it.
+   Ownership is structural: a company signs a building it owns whether or not
+   its windows happen to be lit tonight.
+5. **An engine floor in sepia.** A warm key at 1.9 with a roughness map on the
+   kit washed every surface on the level brown. This is the third time the
+   lighting rig has been caught doing the palette's job; the fix each time has
+   been less light rather than a different colour.
+
+6. **A background layer that was never drawn.** The impostor rings were
+   authored at one to two and a half spans — 520 to 840 metres — and the fog
+   was later tightened until its most generous reach was 430. Linear fog
+   clamps at `far`, so all 256 impostors rendered as pure fog colour against a
+   pure fog sky: the horizon existed in the model, cost its instances, and was
+   invisible on every level. The megastructures this pass added to that ring
+   inherited it. Two numbers in two files, each correct on its own, and
+   nothing that noticed when the second one moved — so there is a test for the
+   relationship now. The substrate gets no horizon at all, which is the right
+   answer rather than a concession: it is an interior, and a distant skyline
+   inside a room is a hole in the wall.
+
+## What the draw-call figure actually was
+
+The gate said sixteen and the formula behind it said "seven part kinds plus
+four" - while the scene had nine kinds and six fixed meshes the formula did not
+mention. Undercounting a budget is the same failure as overcounting one, which
+this project learned the expensive way in Phase 5B.
+
+It is enumerated now: eleven kit meshes, four merged facade meshes, and ten for
+accents, conduits, street, skyline, rain, traffic, steam, light pooling and
+contact shade. **Twenty-five at HIGH**, ceiling raised to thirty with the count
+stated. The number that mattered was never the absolute value - it is that the
+figure is fixed and does not grow with the size of the city.
+
+
+## Results
+
+| Metric | Phase 5B | Phase 5C | Budget |
+|---|---:|---:|---:|
+| Initial JS (gz) | 190.2 KB | **190.2 KB** | 200 KB |
+| Lazy environment (gz) | 240.0 KB | **240.8 KB** | 300 KB |
+| All deferred JS (gz) | 302.7 KB | 296.0 KB | not budgeted |
+| CSS (gz) | 10.5 KB | **10.5 KB** | 16 KB |
+| Dependencies | 6 | **6** | - |
+| Structures (HIGH) | 170 | 169 | 170 |
+| Kit pieces (HIGH) | 3,906 | **6,285** | 12,000 |
+| Draw calls (HIGH) | 13 (undercounted) | **25** (counted) | 30 |
+| Unit tests | 262 | **282** | - |
+| Accessibility + environment | 106 | **96 run, 9 skipped** | - |
+
+Eight tenths of a kilobyte for the whole pass. Nothing here is a new system -
+it is the same instanced meshes drawing more instances, and instances are the
+thing this architecture made cheap on purpose.
+
+## What it costs to draw, measured
+
+Bytes are not the only budget, and this pass added 52% more geometry. So it
+was measured rather than assumed — same machine, same software rasteriser
+(SwiftShader), same probe, instrumenting `drawElements`/`drawArrays` on the
+WebGL context and counting frames.
+
+| | Phase 5B | Phase 5C |
+|---|---:|---:|
+| Laboratory panel, 1180×544 | 53.7 fps | **52.8 fps** |
+| Draw calls per frame | 27 | **27** |
+| Triangles per frame (surface) | 59,704 | **91,052** |
+| Content route, full viewport 1280×720 | 5.9 fps | **2.8 fps** |
+| Triangles per frame (substrate) | 16,157 | **38,000** |
+
+Two things to read out of that.
+
+**At panel size the pass is free.** Same draw calls, 52% more triangles, and
+the frame rate unchanged inside measurement noise. Geometry was never the
+constraint — 91,000 triangles is a rounding error for any GPU made this decade
+— and the instanced architecture means a richer city costs instances rather
+than draw calls, which the unchanged 27 confirms.
+
+**At full viewport, on a software rasteriser, it is about twice as expensive.**
+That is fill rate rather than geometry: the same scene that runs at 53 fps in a
+640,000-pixel panel runs at 2 fps in a 920,000-pixel one, a cliff far steeper
+than the 1.4× difference in pixels, and it is there on both builds. What this
+pass added inside that cliff is overdraw — a ceiling over two levels, blended
+light pooling, contact shade under spanning structures, atmosphere.
+
+The trade is accepted rather than ignored, for three reasons: no device that
+runs this renderer is a software rasteriser, because the tier contract refuses
+WebGL below the top two tiers, so a machine slow enough to care never starts
+one; draw calls, the figure that actually scales with the size of the city, did
+not move; and the geometry budget is met with room to spare at 6,285 parts
+against 12,000.
+
+It is not free, though, and the next optimisation is known: **group the merged
+facade meshes and the instanced kit per level.** Today all four levels share one
+set of meshes whose bounding spheres span the whole 600-metre shaft, so frustum
+culling can never discard the three levels the camera is not on. Tight per-level
+bounds would cull roughly three quarters of the scene at any moment. It was not
+done here because it trades a fixed, small draw-call count for a per-level one,
+and rebuilding the renderer's grouping is the opposite of what an art-direction
+pass is for.
+
+One consequence worth recording: the accessibility suite's heaviest test — an
+axe scan of a content route with the city live — now takes about 48 seconds of
+its 90-second budget on this machine, and failed once under contention during a
+full-suite run while passing on its own. That is the margin this pass spent.
+
+A measurement caution, because it cost an hour: `next start` reads the build
+once, at boot. Rebuilding underneath a running server and then measuring
+compares nothing to nothing — the first attempt at this table reported a 22×
+regression that turned out to be a half-swapped build serving a page where the
+environment never mounted at all.
+
+## Honest assessment
+
+Six of the seven weaknesses the review opened with are addressed, and the
+seventh is partly.
+
+1. **Composition** - fixed, and it was the most valuable change in the pass.
+   The camera stands in a street with hardware in the first twenty metres, a
+   column and a gantry framing the edges, buildings crowding the flanks, and a
+   viaduct crossing the middle distance.
+2. **Orthogonality** - improved rather than solved. About a tenth of the
+   city's geometry is now off-axis: braces, canted modules, awnings, leaning
+   masts, escalator runs, chevron marks. Every mass is still a box.
+3. **Facade repetition** - improved. Four textures, but each mass now starts
+   at its own offset into the tile and half of them are mirrored, so the
+   alignment tell is gone. The *content* still repeats at close range.
+4. **Shadow hierarchy** - addressed without a shadow map. Baked vertex
+   occlusion from height and local density, downward-face darkening, district
+   reflectance, and contact shade under everything elevated.
+5. **Transit** - fixed. A guideway, columns, braces, lit soffits and one
+   station on the camera's sight line, with the traffic lane reading its
+   geometry from the same constants.
+6. **Corporate identity** - fixed. Five marks drawn as geometry, five
+   architectural signatures, and all five corporations now appear in the city.
+7. **Empty streets** - improved. Clustered street furniture answers "who uses
+   this place"; the foreground set gives the camera something at human scale.
+
+What is still true:
+
+- **Every mass is a box.** Bevels, curved massing and curtain-wall relief are
+  not in the grammar, and the tilt field does not change that - it angles
+  boxes.
+- **The floor still takes a third of the frame** on the engine and substrate
+  levels. Better than half, and the foreground now reaches into it, but a
+  level designer would push more geometry toward the lens.
+- **Marks are flat emissive panels.** They read as shapes at distance, which
+  was the goal, but they have no depth, no housing and no mounting.
+- **Props are one material at three sizes.** A barrier, a cabinet and a parked
+  vehicle differ in proportion and value, not in surface.
+- **The substrate is very dark.** That is deliberate and it is still the level
+  most likely to read as underexposed rather than as unlit.
+- **All four levels are drawn at once.** The meshes are shared across the
+  shaft, so frustum culling never discards the three levels the camera is not
+  on. Per-level grouping is the largest performance win still available.

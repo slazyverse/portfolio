@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import {
   DataRow,
   Divider,
@@ -15,6 +16,7 @@ import {
   Vignette,
 } from "@/components/system";
 import { QUALITY } from "@/lib/capability";
+import { EnvironmentLab } from "@/components/environment/EnvironmentLab";
 
 /**
  * The design-system laboratory.
@@ -568,6 +570,20 @@ export default function SystemReference() {
             </table>
           </div>
         </Panel>
+      </Section>
+
+      {/* ---------------------------------------------------------------- */}
+      <Section
+        index="13"
+        title="Environment"
+        note="The procedural city, inspectable. Every tier, every level, every fallback mode — including the ones this machine cannot reach on its own, and the surface level, whose only route is one the environment stands down on. Numbers below are read off the generated model, never written by hand."
+      >
+        {/* `useSearchParams` needs a boundary so this page stays static:
+            the shell prerenders, and the laboratory resolves its query
+            string on the client. */}
+        <Suspense fallback={null}>
+          <EnvironmentLab />
+        </Suspense>
       </Section>
     </main>
   );
