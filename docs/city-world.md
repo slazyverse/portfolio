@@ -28,7 +28,7 @@ order:
 |---|---|---|
 | **Foreground** | 6-20 m | Barriers, cabinets, cables, a drain, parked vehicles, a framing column running out of frame, a gantry crossing overhead |
 | **Midground** | 20-160 m | Buildings with the full kit, the transit viaduct and its station, skybridges, street-level signage |
-| **Background** | 350 m + | Impostor silhouettes in haze, one in seven of them a megastructure three to five times the size of anything in the playable footprint |
+| **Background** | 225-480 m | Impostor silhouettes in haze, five of the sixty-four a megastructure two to three times the size of anything in the playable footprint |
 
 The foreground is the layer that was missing, and its absence was the single
 largest compositional failure of the previous pass. The cause was structural:
@@ -57,6 +57,14 @@ The substrate read as a distant industrial skyline until it had something over
 it. The fix was one move - a ceiling - and the reason it works is that the
 piers state the span of the room, and the span of the room is what makes it a
 megastructure rather than a basement.
+
+Neither interior has a horizon. A distant skyline inside a room would be a
+hole in the wall, so the substrate has none at all and the engine's sits close
+enough to read through its own fog. That relationship — impostor ring inside
+the fog range the level is lit with — is asserted by a test, because for two
+phases it was not true and nothing said so: the rings stood at 520 to 840
+metres against a fog that reached 430, and the entire background layer
+rendered as fog colour on fog.
 
 The shaft **tapers with the level**, too. Holding the void at a constant
 radius while the substrate's footprint narrowed left that level a buildable

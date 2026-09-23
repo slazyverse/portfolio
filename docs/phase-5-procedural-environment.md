@@ -497,7 +497,7 @@ expressed as albedo.
 Contact shade now extends under everything elevated as well, spreading wider
 and softer with height, which is what a diffuse-sky shadow does.
 
-## Five things that were wrong, and what they taught
+## Six things that were wrong, and what they taught
 
 1. **A thirty-four-metre beam down the line of sight.** The overhead gantry was
    given an extra quarter turn "to cross the street" and did the opposite - it
@@ -526,6 +526,18 @@ and softer with height, which is what a diffuse-sky shadow does.
    kit washed every surface on the level brown. This is the third time the
    lighting rig has been caught doing the palette's job; the fix each time has
    been less light rather than a different colour.
+
+6. **A background layer that was never drawn.** The impostor rings were
+   authored at one to two and a half spans — 520 to 840 metres — and the fog
+   was later tightened until its most generous reach was 430. Linear fog
+   clamps at `far`, so all 256 impostors rendered as pure fog colour against a
+   pure fog sky: the horizon existed in the model, cost its instances, and was
+   invisible on every level. The megastructures this pass added to that ring
+   inherited it. Two numbers in two files, each correct on its own, and
+   nothing that noticed when the second one moved — so there is a test for the
+   relationship now. The substrate gets no horizon at all, which is the right
+   answer rather than a concession: it is an interior, and a distant skyline
+   inside a room is a hole in the wall.
 
 ## What the draw-call figure actually was
 
