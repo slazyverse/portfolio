@@ -18,3 +18,6 @@ next-env.d.ts
 test-results/
 playwright-report/
 coverage/
+
+# visual QA frames from scripts/city-shots.mjs
+city-shots*/

@@ -29,6 +29,8 @@ const KIT_KINDS = [
   "platform",
   "bridge",
   "prop",
+  // Phase 5C: the one ring in the kit, for the corporation whose mark is one.
+  "ring",
 ];
 
 describe("buildings are composed, not extruded", () => {

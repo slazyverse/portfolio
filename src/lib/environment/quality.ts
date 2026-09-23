@@ -90,6 +90,18 @@ export interface EnvironmentBudget {
   traffic: number;
   /** Soft contact shading under every building. */
   contactShade: boolean;
+  /**
+   * How much of the authored set dressing a tier gets, as a multiplier.
+   *
+   * The foreground street, the transit spine and the overhead enclosure are
+   * composition rather than content — they are what the camera is standing
+   * in, so they are the last thing to cut, not the first. This scales their
+   * density rather than switching them off: even LOW keeps a guideway, a
+   * ceiling and something in the foreground, because a shot without those is
+   * a different shot, and a tier is meant to be the same city rendered more
+   * cheaply.
+   */
+  fixtureDetail: number;
 }
 
 export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
@@ -135,6 +147,7 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     groundFx: true,
     traffic: 340,
     contactShade: true,
+    fixtureDetail: 1,
   },
   balanced: {
     structures: 110,
@@ -152,6 +165,7 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     // Kept at BALANCED: it is one instanced draw call and it is most of what
     // makes a building look like it is standing on the ground.
     contactShade: true,
+    fixtureDetail: 0.6,
   },
   /**
    * LOW never reaches the WebGL renderer — `QUALITY.low.webgl` is false, so the
@@ -173,6 +187,7 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     groundFx: false,
     traffic: 0,
     contactShade: false,
+    fixtureDetail: 0.34,
   },
 };
 

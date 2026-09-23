@@ -1,6 +1,6 @@
 import { LEVEL_ORDER } from "@/data/routes";
 import type { StratumId } from "@/data/types";
-import { cameraAnchorXZ, cameraBearing, levelFloor } from "./generate";
+import { CAMERA_EYE, cameraAnchorXZ, cameraBearing, levelFloor } from "./generate";
 
 /**
  * The camera model.
@@ -31,19 +31,12 @@ export interface CameraTarget {
  * so the shot was the tops of server cabinets seen from above, which is a
  * view of a floor, not a view of a hall.
  *
- * Each value sits inside its level's structures rather than over them.
+ * Read from the generator, which owns it: the generator has to build the
+ * foreground street around this height and, on the interface level, the deck
+ * the camera is standing on. A second copy here would be a second thing to
+ * keep in step, which is exactly how a camera ends up floating.
  */
-const EYE: Record<StratumId, number> = {
-  // Street level. Standing in the road, looking up a canyon of towers — the
-  // shot the whole surface district is composed for.
-  surface: 9,
-  // Above the cloud deck, among the masts.
-  interface: 96,
-  // On the plant floor, high enough to read the machine blocks as masses.
-  engine: 21,
-  // Inside a server hall, at the height of the cabinets.
-  substrate: 4.4,
-};
+const EYE = CAMERA_EYE;
 
 /**
  * How far above or below the horizon each level looks, measured at the focal
@@ -55,14 +48,32 @@ const EYE: Record<StratumId, number> = {
  * slightly below.
  */
 const PITCH: Record<StratumId, number> = {
-  // Enough to make the towers converge overhead, low enough that the wet
-  // street stays in frame. At 74 the shot was all sky and facade and the
-  // reflective ground — the most expensive thing in the scene and the one
-  // that says "rain" — was entirely out of view.
-  surface: 46,
-  interface: -26,
-  engine: -8,
-  substrate: -1.5,
+  /*
+   * Near level, and the towers converge anyway.
+   *
+   * This was 46 - about sixteen degrees up - on the reasoning that a canyon
+   * reads as tall when the verticals converge. It does, but the convergence
+   * comes from the wide lens and from standing between hundred-metre
+   * buildings thirty metres apart, not from the pitch; and the pitch was
+   * costing the entire lower third of the composition. At sixteen degrees up
+   * with a sixty-two degree field, the ground did not appear until
+   * thirty-three metres, which is past every barrier, cabinet, cable drop and
+   * parked vehicle the foreground contains.
+   *
+   * Four metres of rise over the focal distance is about one and a half
+   * degrees: enough to keep the tops of the near towers out of frame, little
+   * enough that the wet street starts twelve metres from the lens.
+   */
+  surface: 4,
+  // Across the masts rather than down at the deck. A downward pitch from a
+  // camera standing on a platform frames the platform.
+  interface: 12,
+  // Slightly up into the overhead structure, but not so far that the apron
+  // in front of the machine blocks leaves the shot.
+  engine: 8,
+  // Level, and a touch up, so the ceiling of the hall is in frame and the
+  // floor does not take half of it.
+  substrate: 4,
 };
 
 /** How far across the shaft the camera looks. Past the far wall. */

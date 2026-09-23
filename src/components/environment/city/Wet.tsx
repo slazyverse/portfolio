@@ -59,7 +59,45 @@ export function WetSheen({
     const amber = new THREE.Color(palette.amber);
     const cold = new THREE.Color(palette.cold);
 
+    /** One pool of light under a sign, if it is low enough and bright enough. */
+    const pool = (p: { kind: string; emissive: number; signal: string; position: readonly [number, number, number]; size: readonly [number, number, number]; rotation: number }, floor: number): boolean => {
+      if (p.kind !== "sign" || p.emissive < 0.55) return false;
+      const height = p.position[1] - floor;
+      if (height > 34) return false;
+      const reach = 1 - height / 34;
+      // Fifteen metres, not twenty-six, and stretched less along the road.
+      // A pool sized generously is a pool that overlaps its neighbours, and
+      // additive blending turns overlap into a flare: at street height the
+      // right-hand third of the surface shot was a single sheet of white.
+      const spread = Math.min(Math.max(p.size[0], p.size[2]) * (2 + reach * 1.6), 15);
+      pos.set(p.position[0], floor + 0.18, p.position[2]);
+      scale.set(spread, spread * (1.1 + reach * 0.6), 1);
+      q.setFromAxisAngle(up, p.rotation).multiply(tilt);
+      matrices.push(m.clone().compose(pos, q, scale));
+      colours.push(
+        // 0.022, down from 0.06. With the camera at street height the near
+        // pavement fills the bottom of the frame, and pools that read as a
+        // wet sheen from nine metres up read as a flare from six.
+        (p.signal === "cold" ? cold : amber).clone().multiplyScalar(p.emissive * reach * 0.022),
+      );
+      return true;
+    };
+
     for (const level of city.levels) {
+      /*
+       * The authored fixtures light the street too — the station soffit, the
+       * signal heads on the gantry, the pedestrian lamps. Thinned by a stride
+       * rather than capped per object, because they do not belong to a
+       * building and there is nothing to count them against.
+       */
+      let seen = 0;
+      for (const p of level.fixtures) {
+        if (p.kind !== "sign" || p.emissive < 0.55) continue;
+        seen += 1;
+        if (seen % 2 === 0) continue;
+        pool(p, level.floor);
+      }
+
       for (const s of level.structures) {
         /*
          * At most two pools per building.
@@ -73,32 +111,7 @@ export function WetSheen({
         let pools = 0;
         for (const p of s.parts) {
           if (pools >= 2) break;
-          if (p.kind !== "sign" || p.emissive < 0.55) continue;
-
-          // How far above the road it is. Light from forty storeys up does
-          // not pool on the pavement.
-          const height = p.position[1] - level.floor;
-          if (height > 34) continue;
-          const reach = 1 - height / 34;
-
-          // Bounded. Clustered signage on one frontage stacked additively
-          // into a single blown-out flare on the road; a pool of light has a
-          // size, and that size does not grow without limit.
-          const spread = Math.min(
-            Math.max(p.size[0], p.size[2]) * (2 + reach * 2.4),
-            26,
-          );
-          pos.set(p.position[0], level.floor + 0.18, p.position[2]);
-          scale.set(spread, spread * (1.4 + reach), 1);
-          q.setFromAxisAngle(up, p.rotation).multiply(tilt);
-          matrices.push(m.clone().compose(pos, q, scale));
-
-          colours.push(
-            (p.signal === "cold" ? cold : amber)
-              .clone()
-              .multiplyScalar(p.emissive * reach * 0.06),
-          );
-          pools += 1;
+          if (pool(p, level.floor)) pools += 1;
         }
       }
     }

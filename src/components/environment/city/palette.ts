@@ -144,12 +144,22 @@ export function lightRig(level: StratumId, palette: Palette): LightRig {
       // the floor plates, which is why this level reads as heavy — everything
       // is underlit, and underlighting is what makes mass feel like mass.
       return {
-        // Warm, but not orange. The first pass ran the key at 0.85 of a
-        // strongly saturated amber and every concrete surface came out
-        // terracotta — the light was doing the palette's job for it.
-        ambient: { colour: "#6d6b70", intensity: 1.7 },
-        key: { colour: "#ffc08a", intensity: 1.9, position: [60, -40, 90] },
-        rim: { colour: "#9dc2da", intensity: 2.2, position: [-180, 220, -120] },
+        /*
+         * Warm, but barely, and weak.
+         *
+         * Corrected twice. The first pass ran a strongly saturated amber key
+         * and every concrete surface came out terracotta. The second toned
+         * the hue down but left the intensity at 1.9, and with a roughness
+         * map on the kit the whole level went sepia — the same mistake one
+         * step quieter, the light doing the palette's job for it.
+         *
+         * The furnace is underneath and it is what motivates the warmth; the
+         * machine above it is separated by a cold rim carrying most of the
+         * energy in the rig.
+         */
+        ambient: { colour: "#6d6d74", intensity: 1.7 },
+        key: { colour: "#ffd6bc", intensity: 1.55, position: [60, -40, 90] },
+        rim: { colour: "#a6cce4", intensity: 2.6, position: [-180, 220, -120] },
         fog: [30, 330],
       };
     case "substrate":
@@ -157,8 +167,11 @@ export function lightRig(level: StratumId, palette: Palette): LightRig {
       // Bedrock. The racks light themselves and everything between them is
       // dark — the one level where brightness would be the mistake.
       return {
-        ambient: { colour: "#4e7183", intensity: 1.15 },
-        key: { colour: "#a9cfe2", intensity: 1.4, position: [40, 120, 60] },
+        // Still the darkest level by a wide margin, but enough to read the
+        // racks as forms. Below this the hall was a black band with a few
+        // indicator dots in it, which is not "dark" so much as "absent".
+        ambient: { colour: "#4e7183", intensity: 1.5 },
+        key: { colour: "#a9cfe2", intensity: 1.75, position: [40, 120, 60] },
         rim: { colour: "#6f9fb8", intensity: 0.9, position: [-120, 40, -80] },
         fog: [12, 120],
       };

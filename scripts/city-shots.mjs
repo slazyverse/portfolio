@@ -30,27 +30,34 @@ const flag = (name, fallback) => {
 const OUT = flag("--out", "city-shots");
 const URL_BASE = flag("--url", "http://127.0.0.1:3000");
 
-/** Level, tier, render mode. `null` keeps whatever is already selected. */
+/**
+ * One shot each. `level`, `tier` and `mode` are the laboratory's own URL
+ * parameters, so every frame is a page the reviewer can open themselves.
+ */
 const SHOTS = [
-  { name: "01-surface-high", level: "00 Surface", tier: "high", mode: "webgl" },
-  { name: "02-interface-high", level: "01 Interface", tier: "high", mode: "webgl" },
-  { name: "03-engine-high", level: "02 Engine", tier: "high", mode: "webgl" },
-  { name: "04-substrate-high", level: "03 Substrate", tier: "high", mode: "webgl" },
-  { name: "05-surface-balanced", level: "00 Surface", tier: "balanced", mode: "webgl", wide: false },
-  { name: "06-surface-low-canvas", level: "00 Surface", tier: "low", mode: "canvas", wide: false },
-  { name: "07-surface-css", level: "00 Surface", tier: "low", mode: "css", wide: false },
+  { name: "01-surface-high", level: "surface", tier: "high", mode: "webgl" },
+  { name: "02-interface-high", level: "interface", tier: "high", mode: "webgl" },
+  { name: "03-engine-high", level: "engine", tier: "high", mode: "webgl" },
+  { name: "04-substrate-high", level: "substrate", tier: "high", mode: "webgl" },
+  { name: "05-surface-balanced", level: "surface", tier: "balanced", mode: "webgl" },
+  { name: "06-surface-low-canvas", level: "surface", tier: "low", mode: "canvas" },
+  { name: "07-surface-css", level: "surface", tier: "low", mode: "css" },
   // The city must still be there under reduced motion, and still.
   {
     name: "08-surface-reduced-motion",
-    level: "00 Surface",
+    level: "surface",
     tier: "high",
     mode: "webgl",
     reducedMotion: true,
   },
-  // And one of a real content route, with the chrome and the legibility scrim
+  // And two of a real content route, with the chrome and the legibility scrim
   // in place — the only way anyone actually sees this in production.
   { name: "09-record-in-context", path: "/record" },
   { name: "10-contracts-in-context", path: "/contracts" },
+  // And on a phone, where the tier contract forbids WebGL entirely and the
+  // environment is a CSS gradient. The point of the shot is that the page is
+  // unaffected: same content, same chrome, no hole where a city was.
+  { name: "11-record-mobile", path: "/record", mobile: true },
 ];
 
 mkdirSync(OUT, { recursive: true });
@@ -67,6 +74,7 @@ const LAUNCH = {
 };
 
 const VIEWPORT = { width: 1280, height: 720 };
+const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
 /**
  * One browser per shot.
@@ -86,8 +94,10 @@ async function capture(shot) {
   const browser = await chromium.launch(LAUNCH);
   try {
     const context = await browser.newContext({
-      viewport: VIEWPORT,
+      viewport: shot.mobile ? MOBILE_VIEWPORT : VIEWPORT,
       deviceScaleFactor: 1,
+      isMobile: Boolean(shot.mobile),
+      hasTouch: Boolean(shot.mobile),
       reducedMotion: shot.reducedMotion ? "reduce" : "no-preference",
     });
     const page = await context.newPage();
@@ -97,44 +107,37 @@ async function capture(shot) {
       }
     });
 
-    const choose = async (label) => {
-      const button = page.getByRole("button", { name: label, exact: true }).first();
-      if ((await button.count()) === 0) throw new Error(`no control named "${label}"`);
-      // Dispatched rather than clicked: Playwright's click waits for the
-      // element to be "stable", and this page runs entrance reveals with
-      // motion enabled — the state the city has to be reviewed in.
-      await button.dispatchEvent("click");
-      await page.waitForTimeout(400);
-    };
+    /*
+     * Arrive in the state wanted, rather than clicking into it.
+     *
+     * The first version drove the laboratory's buttons. That worked for the
+     * default tier and failed silently for every other one: switching tier in
+     * a live page tears down a WebGL context and builds another, and on a
+     * software rasteriser the second one frequently never arrived — the
+     * "balanced" and "low" frames came back reading "renderer stepped down:
+     * WebGL context lost". It also screenshotted the top of the page rather
+     * than the stage, so for several rounds the tier comparisons contained no
+     * city at all.
+     *
+     * One navigation, one context, and a URL a reviewer can open themselves.
+     */
+    const url = shot.path
+      ? `${URL_BASE}${shot.path}`
+      : `${URL_BASE}/system?${new URLSearchParams({
+          level: shot.level,
+          tier: shot.tier,
+          mode: shot.mode,
+          wide: "1",
+        })}`;
 
-    await page.goto(`${URL_BASE}${shot.path ?? "/system"}`, { waitUntil: "networkidle" });
+    await page.goto(url, { waitUntil: "networkidle" });
     await page.waitForTimeout(900);
 
-    if (!shot.path) {
-      // Controls first, full bleed second: the stage covers the whole viewport
-      // once open, so with it open every later click lands on the canvas.
-      if (shot.level) await choose(shot.level);
-      if (shot.tier) await choose(shot.tier);
-
-      // A tier change tears the renderer down and builds a new one, and on a
-      // software rasteriser that takes real time. Wait for the canvas to come
-      // back *before* touching anything else — clicking on into a half-built
-      // renderer is what made this hang.
-      if (shot.mode === "webgl") {
-        await page
-          .locator("canvas")
-          .first()
-          .waitFor({ state: "attached", timeout: 60000 });
-        await page.waitForTimeout(1500);
-      }
-
-      if (shot.mode) await choose(shot.mode);
-
-      // Full bleed only where the frame is the subject. The tier and fallback
-      // comparisons read perfectly well in the panel, and every extra
-      // container change is another chance for the renderer to be caught
-      // mid-rebuild.
-      if (shot.wide !== false) await choose("full bleed");
+    if (!shot.path && shot.mode === "webgl") {
+      // The renderer is lazy and the city is built on an idle callback, so
+      // the canvas arrives a beat after the page does.
+      await page.locator("canvas").first().waitFor({ state: "attached", timeout: 60000 });
+      await page.waitForTimeout(1800);
     }
 
     // Let the camera settle and the weather reach a steady state.

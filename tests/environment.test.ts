@@ -4,7 +4,12 @@ import { LEVEL_ORDER, ROUTES, route } from "@/data/routes";
 import type { StratumId } from "@/data/types";
 import { QUALITY, type QualityTier } from "@/lib/capability";
 import { cameraTargetForLevel, descentDuration, easeInOut } from "@/lib/environment/camera";
-import { CITY_GEOMETRY, generateCity, levelFloor } from "@/lib/environment/generate";
+import {
+  CITY_GEOMETRY,
+  generateCity,
+  levelFloor,
+  levelVoidRadius,
+} from "@/lib/environment/generate";
 import {
   ENVIRONMENT_BUDGET,
   environmentBudget,
@@ -149,11 +154,20 @@ describe("city structure", () => {
   });
 
   it("keeps the central shaft clear so the camera can descend through it", () => {
+    // The shaft tapers with the level, because the room does: holding the
+    // void at a constant radius while the substrate's footprint narrowed
+    // left that level a buildable band twenty-three metres wide, and the
+    // hall the camera was meant to be standing inside became a ring on the
+    // far side of an empty floor. Each level is checked against its own
+    // radius, and every one of them still clears the descent path, which
+    // runs at the camera offset.
     const city = generateCity("high");
     for (const level of city.levels) {
+      const inner = levelVoidRadius(level.level);
+      expect(inner).toBeGreaterThan(CITY_GEOMETRY.CAMERA_OFFSET + 6);
       for (const s of level.structures) {
         const radius = Math.hypot(s.position[0], s.position[2]);
-        expect(radius).toBeGreaterThanOrEqual(CITY_GEOMETRY.VOID_RADIUS);
+        expect(radius, `${s.id}`).toBeGreaterThanOrEqual(inner);
       }
     }
   });
@@ -348,15 +362,26 @@ describe("quality tiers", () => {
   });
 
   it("keeps the whole city inside a small, fixed number of draw calls", () => {
-    // Raised from 8 when the city gained an architectural kit: seven part
-    // kinds, plus lit cells, conduits, ground, skyline, rain and ground FX.
-    //
-    // The number that matters is that it is *fixed* — it does not grow with
-    // the size of the city. Every building on every level shares the same
-    // seven instanced meshes, so a denser city costs instances and never draw
-    // calls. A ceiling here is what stops someone "just adding a mesh".
+    /*
+     * Raised from 16 to 30, and the honest reason is that 16 was never the
+     * real figure.
+     *
+     * The old number came from a formula that said "seven part kinds plus
+     * four" while the scene had nine kinds and six fixed meshes it did not
+     * mention — so the gate was measuring something smaller than what the
+     * renderer issues. The count is enumerated now, against what the scene
+     * actually declares, and it comes to 25 at HIGH: eleven kit meshes, four
+     * merged facade meshes, and ten for accents, conduits, street, skyline,
+     * rain, traffic, steam, light pooling and contact shade.
+     *
+     * The number that matters was never the absolute value. It is that the
+     * figure is *fixed* — it does not grow with the size of the city. Every
+     * building on every level, and every authored fixture, shares the same
+     * instanced meshes, so a denser city costs instances and never draw
+     * calls. A ceiling here is what stops someone "just adding a mesh".
+     */
     for (const tier of TIERS) {
-      expect(generateCity(tier).stats.drawCalls).toBeLessThanOrEqual(16);
+      expect(generateCity(tier).stats.drawCalls).toBeLessThanOrEqual(30);
     }
   });
 });

@@ -43,10 +43,16 @@ function Street({
 }) {
   const size = CITY_GEOMETRY.SPAN * 3.2;
 
-  // Lane markings belong on a street. The first pass painted the same road
-  // across all four levels, so the substrate — a server hall two hundred
-  // metres underground — had highway lane markings running through it.
-  const paved = level.level === "surface" || level.level === "engine";
+  /*
+   * Lane markings belong on a street, and only one of these levels is one.
+   *
+   * The first pass painted the same road across all four, so the substrate —
+   * a server hall two hundred metres underground — had highway markings
+   * running through it. The engine floor kept them a phase longer, and a
+   * dashed white centre line through a plant hall reads as a highway for the
+   * same reason. A plant floor is a dark matte slab that has been worked on.
+   */
+  const paved = level.level === "surface";
   const repeat = size / (paved ? 46 : 18);
 
   const map = useMemo(() => {
@@ -72,11 +78,26 @@ function Street({
         // White: the road texture is the albedo. Multiplying it by a near-black
         // interface token made the street disappear, which is the same mistake
         // as tinting the facades with one.
-        color={paved ? "#ffffff" : "#2a3038"}
-        // Wet asphalt is smooth and quite metallic in its response; a dry
-        // plant-room floor is neither.
-        roughness={paved ? 0.34 : 0.9}
-        metalness={paved ? 0.55 : 0.1}
+        // The unpaved floors are a concrete slab, not a void: at #2a3038 the
+        // engine and substrate floors were so dark that the grime texture on
+        // them carried no information at all, and half of each frame was flat
+        // black.
+        color={paved ? "#ffffff" : "#3a434e"}
+        /*
+         * Wet asphalt is smoother and more metallic in its response than dry,
+         * but not by as much as the first numbers claimed.
+         *
+         * At 0.34 roughness and 0.55 metalness the road was a near-mirror,
+         * and a near-mirror under a low directional light produces one
+         * enormous specular lobe — which is exactly what the right-hand third
+         * of this shot was: not a bug in the light pooling, but the key
+         * light's own reflection, blown to white across twenty percent of the
+         * frame. Broadening the lobe spreads the same energy over more of the
+         * road, which is what a real wet surface does and what makes it read
+         * as wet rather than as chrome.
+         */
+        roughness={paved ? 0.52 : 0.9}
+        metalness={paved ? 0.34 : 0.1}
       />
     </mesh>
   );

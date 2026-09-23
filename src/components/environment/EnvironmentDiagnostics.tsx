@@ -71,6 +71,7 @@ export default function EnvironmentDiagnostics({
     ["level", level],
     ["seed", city.seed],
     ["structures", String(city.stats.structures)],
+    ["kit pieces", String(city.stats.parts)],
     ["lit cells", String(city.stats.lights)],
     ["conduits", String(city.stats.conduits)],
     ["anchors", String(city.stats.anchors)],

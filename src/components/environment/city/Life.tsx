@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { CITY_GEOMETRY } from "@/lib/environment/generate";
+import { CITY_GEOMETRY, TRANSIT } from "@/lib/environment/generate";
 import type { City } from "@/lib/environment/types";
 import type { Palette } from "./palette";
 
@@ -115,8 +115,20 @@ export function Traffic({
       // — a vehicle is a small bright thing, not a bar.
       const lane = i % 5;
       const street = lane < 4;
-      const r = CITY_GEOMETRY.VOID_RADIUS + 18 + lane * 21 + ((i * 0.618) % 1) * 12;
-      const y = floor + (street ? 1.4 + lane * 0.7 : 46);
+      /*
+       * The elevated lane runs on the guideway, not near it.
+       *
+       * Previously this was a radius and a height picked to look about right,
+       * and the result was the weakness the review named: a line of lights in
+       * the air with no structure under it. Both numbers now come from
+       * `TRANSIT`, which is also what the generator builds the deck, the
+       * columns and the station from — so the vehicles are on the track by
+       * construction rather than by coincidence.
+       */
+      const r = street
+        ? CITY_GEOMETRY.VOID_RADIUS + 18 + lane * 21 + ((i * 0.618) % 1) * 12
+        : TRANSIT.radius + (((i * 0.618) % 1) - 0.5) * (TRANSIT.deck * 0.5);
+      const y = floor + (street ? 1.4 + lane * 0.7 : TRANSIT.height + 2.4);
       const direction = lane % 2 === 0 ? 1 : -1;
       const sp = direction * (0.03 + ((i * 0.3247) % 1) * 0.045) * (street ? 1 : 0.6);
       const ph = (i * 2.399963) % (Math.PI * 2);
@@ -368,6 +380,47 @@ export function ContactShade({ city }: { city: City }) {
         pos.set(x, y + 0.15, z);
         scale.set(w * 2.3, d * 2.3, 1);
         q.setFromAxisAngle(up, s.rotation).multiply(tilt);
+        out.push(m.clone().compose(pos, q, scale));
+      }
+
+      /*
+       * And under everything elevated.
+       *
+       * A viaduct thirty metres up, a skybridge, a cantilever over the
+       * pavement: each of them puts a region of the ground into shade, and
+       * that region is one of the few places in a flat-lit night city where
+       * there is real tonal contrast to be had. Spread wider and therefore
+       * softer the higher the thing is, which is what a shadow from a diffuse
+       * sky actually does.
+       */
+      const elevated = [
+        ...band.fixtures,
+        ...band.structures.flatMap((s) => [...s.parts]),
+      ];
+      for (const p of elevated) {
+        if (p.kind !== "bridge" && p.kind !== "platform") continue;
+        const height = p.position[1] - band.floor;
+        if (height < 8) continue;
+        /*
+         * Only things that *span*.
+         *
+         * A shadow on the ground comes from something crossing over it — a
+         * viaduct, a skybridge, a cantilever, a station platform — not from
+         * every band and balcony on a facade, and emphatically not from a
+         * ceiling. The substrate's sixteen ceiling plates were each casting a
+         * sixty-eight-metre multiply-blended quad onto the floor directly
+         * under the camera: wrong, because a roof does not cast a local
+         * shadow on the room it covers, and expensive, because that is some
+         * seventy thousand square metres of overdraw on the one level the
+         * `/record` route looks at. Long and narrow casts; broad does not.
+         */
+        const span = Math.max(p.size[0], p.size[2]);
+        const across = Math.min(p.size[0], p.size[2]);
+        if (span < 8 || across > 20) continue;
+        const spread = 1.4 + Math.min(height / 26, 2.2);
+        pos.set(p.position[0], band.floor + 0.14, p.position[2]);
+        scale.set(p.size[0] * spread, Math.max(p.size[2], 4) * spread, 1);
+        q.setFromAxisAngle(up, p.rotation).multiply(tilt);
         out.push(m.clone().compose(pos, q, scale));
       }
     }

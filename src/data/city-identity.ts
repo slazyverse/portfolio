@@ -70,7 +70,10 @@ export const DISTRICTS: Record<DistrictId, DistrictProfile> = {
     // Kept. Somebody pays for this.
     wear: [0.05, 0.3],
     signage: 0.55,
-    litShare: 0.72,
+    // Lit all night, because nobody in this district is paying the bill
+    // personally. The gap between this and the residential 0.42 one ring out
+    // is the economic hierarchy, stated in the one currency a night city has.
+    litShare: 0.88,
     storefront: 0.2,
     exposedServices: 0.05,
     bridges: 0.55,
@@ -82,7 +85,8 @@ export const DISTRICTS: Record<DistrictId, DistrictProfile> = {
     wear: [0.35, 0.75],
     // Commercial messaging has occupied the public space here.
     signage: 0.92,
-    litShare: 0.62,
+    // The signage is lit; the floors above it mostly are not.
+    litShare: 0.5,
     storefront: 0.85,
     exposedServices: 0.45,
     bridges: 0.3,
@@ -93,7 +97,8 @@ export const DISTRICTS: Record<DistrictId, DistrictProfile> = {
     id: "residential",
     wear: [0.5, 0.95],
     signage: 0.42,
-    litShare: 0.55,
+    // Lights on where someone is in, and a great many people are out.
+    litShare: 0.42,
     storefront: 0.35,
     exposedServices: 0.8,
     bridges: 0.22,
@@ -104,7 +109,16 @@ export const DISTRICTS: Record<DistrictId, DistrictProfile> = {
     id: "industrial",
     wear: [0.6, 1],
     signage: 0.3,
-    litShare: 0.3,
+    /*
+     * A plant floor has task lighting, not windows — but not *no* light.
+     *
+     * At 0.22 this compounded with the engine level's own 0.3 share and the
+     * balanced tier's smaller structure count into a level with zero lit
+     * buildings, which is not a dark level, it is a missing one. The lowest
+     * of the five is still the lowest by a wide margin; it is simply above
+     * the floor now.
+     */
+    litShare: 0.34,
     storefront: 0.05,
     exposedServices: 0.95,
     bridges: 0.35,

@@ -51,14 +51,35 @@ export type PartKind =
   /** A skybridge between two neighbours. */
   | "bridge"
   /** Human-scale street furniture: cabinets, bollards, railings, vents. */
-  | "prop";
+  | "prop"
+  /**
+   * An emissive ring. The one non-box, non-cylinder primitive in the kit.
+   *
+   * It exists because one of the five corporations has a ring for a mark, and
+   * a corporate identity that is only a colour is not an identity. Everything
+   * else in the signage grammar is assembled from tilted boxes.
+   */
+  | "ring";
 
 export interface Part {
   kind: PartKind;
   /** Centre of the part, in world space. */
   position: readonly [number, number, number];
   size: readonly [number, number, number];
+  /** Yaw, in radians. */
   rotation: number;
+  /**
+   * Pitch, in radians, applied after yaw about the part's local X axis.
+   *
+   * The single field that breaks the orthogonal look. Everything in this city
+   * is assembled from boxes, and a city of axis-aligned boxes reads as
+   * generated no matter how good its textures are — what it is missing is not
+   * detail but *angle*. One extra number per part buys diagonal braces,
+   * canted service modules, leaning masts, chevron marks and angled awnings,
+   * and costs nothing at render time because a quaternion was already being
+   * composed per instance.
+   */
+  tilt: number;
   signal: Signal;
   /** Which facade atlas cell a mass uses. */
   variant: number;
@@ -205,6 +226,28 @@ export interface LevelEnvironment {
   /** World Y of this level's floor. Descending means decreasing Y. */
   floor: number;
   structures: readonly Structure[];
+  /**
+   * Authored geometry that belongs to the level rather than to any building.
+   *
+   * Three things live here, and they are the three the procedural grid cannot
+   * produce because each is a decision about the *shot* rather than about a
+   * building:
+   *
+   *  - the **foreground set** — barriers, cabinets, cables, a drain, a kerb
+   *    of parked vehicles, an overhead gantry — placed a few metres from the
+   *    lens to occlude the frame edges and give the eye something at human
+   *    scale to measure the towers against;
+   *  - the **transit spine** — a guideway, its supporting columns and one
+   *    station, so the elevated lane reads as infrastructure rather than as a
+   *    road that happens to be in the air;
+   *  - the **enclosure** — ceiling plates, piers and service runs overhead on
+   *    the two levels that are interiors, which is what turns the substrate
+   *    from a distant skyline into a hall you are standing inside.
+   *
+   * Rendered through exactly the same instanced meshes as every building's
+   * kit, so none of it costs a draw call.
+   */
+  fixtures: readonly Part[];
   lights: readonly LightCell[];
   conduits: readonly Conduit[];
   anchors: readonly EnvironmentAnchor[];

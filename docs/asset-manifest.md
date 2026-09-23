@@ -49,6 +49,13 @@ bytes.**
 | Road | Asphalt, lane markings, hazard hatching, wear, standing water | 1.4 MB |
 | **Total** | | **≈ 13 MB** |
 
+The grime map does double duty: it is the facades' roughness map and, since
+this pass, every kit piece's as well. Materials read as materials when their
+roughness is uneven, and before this each kind had exactly one roughness value
+- so painted steel, a galvanised cabinet and a concrete pier all returned light
+identically and could only be told apart by colour. The map was already in
+memory; applying it to the kit costs nothing.
+
 Sizes are per quality tier: 512 px at HIGH, 384 px at BALANCED, 256 px at LOW.
 The figure is asserted in `tests/environment-detail.test.ts` — an earlier
 version used 1024 px maps, which multiply out to 49 MB, and the test is there
@@ -68,8 +75,9 @@ Every object in the world is procedural. There is no imported mesh.
 | Object | Primitive | Technique |
 |---|---|---|
 | Building masses | Box | Merged per facade variant, UVs baked at world scale |
-| Fins, relief bands, balconies, roof plant, signage, skybridges, street furniture | Box | Instanced, one mesh per kind |
-| Water tanks, pipework | Cylinder (8 and 6 sided) | Instanced |
+| Fins, relief bands, balconies, roof plant, signage, skybridges, street furniture, braces, retrofits, transit deck, ceiling plates, piers | Box | Instanced, one mesh per kind |
+| Water tanks, pipework, transit columns | Cylinder (8 and 6 sided) | Instanced |
+| Corporate marks | Box and torus | Instanced; a mark is a shape family, never a glyph |
 | Conduits | Line segments | Merged into one geometry |
 | Rain | Line segments | Animated entirely in a vertex shader |
 | Skyline | Plane | Instanced impostors, tinted toward fog by depth |

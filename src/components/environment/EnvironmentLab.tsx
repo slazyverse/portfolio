@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useMotionAllowed } from "@/components/providers/MotionProvider";
 import { LEVEL_NAME, LEVEL_ORDER, levelIndex, route } from "@/data/routes";
@@ -38,12 +39,43 @@ const MODES: EnvironmentMode[] = ["webgl", "canvas", "css", "none"];
  */
 export function EnvironmentLab() {
   const deviceMotion = useMotionAllowed();
-  const [level, setLevel] = useState<StratumId>("surface");
-  const [tier, setTier] = useState<QualityTier>("high");
-  const [mode, setMode] = useState<EnvironmentMode>("webgl");
-  const [motion, setMotion] = useState(true);
-  const [wide, setWide] = useState(false);
+  /*
+   * The controls are addressable by URL, and the URL is the *default* rather
+   * than a second source of truth.
+   *
+   * `/system?level=engine&tier=balanced&mode=webgl&wide=1` opens on that
+   * state. Two reasons, and the second is what made it necessary:
+   *
+   *  - a review you can link to is a review someone else can repeat, which is
+   *    the entire premise of this page;
+   *  - switching tier in a live page tears down a WebGL context and builds
+   *    another, and on the software rasteriser the visual QA harness runs on
+   *    the second context frequently never arrived. Every non-default tier
+   *    came back reading "renderer stepped down: WebGL context lost".
+   *    Arriving in the state wanted, with one context, is not a workaround
+   *    for that — it is how a reader would reach it too.
+   *
+   * Held as `null` until someone clicks, and resolved against the query
+   * string during render. A `useEffect` that copied the URL into state would
+   * have been the obvious shape and the wrong one: it is a second copy of a
+   * value that already exists, updated one render late.
+   */
+  const params = useSearchParams();
+  const pick = <T extends string>(key: string, allowed: readonly T[], fallback: T): T =>
+    allowed.find((a) => a === params.get(key)) ?? fallback;
+
+  const [levelChoice, setLevel] = useState<StratumId | null>(null);
+  const [tierChoice, setTier] = useState<QualityTier | null>(null);
+  const [modeChoice, setMode] = useState<EnvironmentMode | null>(null);
+  const [motionChoice, setMotion] = useState<boolean | null>(null);
+  const [wideChoice, setWide] = useState<boolean | null>(null);
   const [failure, setFailure] = useState<string | undefined>();
+
+  const level = levelChoice ?? pick("level", LEVEL_ORDER, "surface");
+  const tier = tierChoice ?? pick("tier", TIERS, "high");
+  const mode = modeChoice ?? pick("mode", MODES, "webgl");
+  const motion = motionChoice ?? params.get("motion") !== "0";
+  const wide = wideChoice ?? params.get("wide") === "1";
 
   // Escape leaves the full-bleed view. A viewer that fills the screen and can
   // only be dismissed by finding a small button again is a trap.
@@ -154,6 +186,7 @@ export function EnvironmentLab() {
       <dl className="grid grid-cols-2 gap-x-8 gap-y-2 t-mono text-[0.75rem] sm:grid-cols-4">
         <Stat label="seed" value={city.seed} />
         <Stat label="structures" value={String(city.stats.structures)} />
+        <Stat label="kit pieces" value={String(city.stats.parts)} />
         <Stat label="lit cells" value={String(city.stats.lights)} />
         <Stat label="conduits" value={String(city.stats.conduits)} />
         <Stat label="anchors" value={String(city.stats.anchors)} />
@@ -174,6 +207,7 @@ export function EnvironmentLab() {
             <th className="py-1 pr-4 font-normal">level</th>
             <th className="py-1 pr-4 font-normal">floor</th>
             <th className="py-1 pr-4 font-normal">structures</th>
+            <th className="py-1 pr-4 font-normal">set pieces</th>
             <th className="py-1 pr-4 font-normal">lit cells</th>
             <th className="py-1 pr-4 font-normal">anchors</th>
           </tr>
@@ -186,6 +220,7 @@ export function EnvironmentLab() {
               </td>
               <td className="py-1 pr-4">{l.floor}</td>
               <td className="py-1 pr-4">{l.structures.length}</td>
+              <td className="py-1 pr-4">{l.fixtures.length}</td>
               <td className="py-1 pr-4">{l.lights.length}</td>
               <td className="py-1 pr-4">{l.anchors.length}</td>
             </tr>

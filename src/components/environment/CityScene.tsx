@@ -360,7 +360,7 @@ function Scene({
       {budget.contactShade && <ContactShade city={city} />}
 
       <Masses city={city} textures={textures} />
-      <KitPieces city={city} palette={palette} />
+      <KitPieces city={city} palette={palette} textures={textures} />
       <Accents city={city} palette={palette} />
       <Conduits city={city} palette={palette} />
 
