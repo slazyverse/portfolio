@@ -547,13 +547,14 @@ figure is fixed and does not grow with the size of the city.
 |---|---:|---:|---:|
 | Initial JS (gz) | 190.2 KB | **190.2 KB** | 200 KB |
 | Lazy environment (gz) | 240.0 KB | **240.8 KB** | 300 KB |
-| All deferred JS (gz) | 302.7 KB | 295.9 KB | not budgeted |
+| All deferred JS (gz) | 302.7 KB | 296.0 KB | not budgeted |
 | CSS (gz) | 10.5 KB | **10.5 KB** | 16 KB |
 | Dependencies | 6 | **6** | - |
 | Structures (HIGH) | 170 | 169 | 170 |
 | Kit pieces (HIGH) | 3,906 | **6,285** | 12,000 |
 | Draw calls (HIGH) | 13 (undercounted) | **25** (counted) | 30 |
 | Unit tests | 262 | **282** | - |
+| Accessibility + environment | 106 | **96 run, 9 skipped** | - |
 
 Eight tenths of a kilobyte for the whole pass. Nothing here is a new system -
 it is the same instanced meshes drawing more instances, and instances are the
