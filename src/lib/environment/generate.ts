@@ -256,6 +256,22 @@ interface LevelProfile {
    * it.
    */
   voidScale: number;
+  /**
+   * Where the horizon stands, as a fraction of `SPAN`: near ring, far ring.
+   *
+   * It has to clear the buildable footprint and sit *inside* this level's fog,
+   * and the second half of that was wrong for two phases. The rings were
+   * authored at 1.05 to 2.55 spans — 520 to 840 metres — while the fog was
+   * tightened to reach 430 at its most generous. Every one of the 256
+   * impostors in the city rendered as pure fog colour. The background layer
+   * existed in the model, cost its instances, and was invisible in all four
+   * levels.
+   *
+   * A zero band means this level has no horizon at all, which is the correct
+   * answer for an interior: the substrate has a ceiling and piers, and a
+   * distant skyline inside a room would be a hole in the wall.
+   */
+  skylineBand: readonly [number, number];
 }
 
 const PROFILE: Record<StratumId, LevelProfile> = {
@@ -273,6 +289,7 @@ const PROFILE: Record<StratumId, LevelProfile> = {
     conduitAxis: "vertical",
     rows: false,
     spanScale: 1,
+    skylineBand: [0.56, 1.21],
     voidScale: 1,
     structureShare: 0.24,
     // The establishing level. Warm, populated, the most lit of the four.
@@ -292,6 +309,7 @@ const PROFILE: Record<StratumId, LevelProfile> = {
     conduitAxis: "vertical",
     rows: false,
     spanScale: 0.88,
+    skylineBand: [0.58, 1.45],
     voidScale: 0.92,
     // Raised from 0.2, taken from the substrate. This level frames a canyon
     // with a gap of sky down the middle, and at thirty-four structures the
@@ -315,6 +333,7 @@ const PROFILE: Record<StratumId, LevelProfile> = {
     conduitAxis: "horizontal",
     rows: false,
     spanScale: 0.76,
+    skylineBand: [0.55, 0.92],
     voidScale: 0.74,
     structureShare: 0.16,
     // The darkest level by design. Light here is furnace glow, and rare.
@@ -334,6 +353,8 @@ const PROFILE: Record<StratumId, LevelProfile> = {
     cell: 0.62,
     conduitAxis: "horizontal",
     rows: true,
+    // A hall has no horizon. It has a ceiling, which the fixtures build.
+    skylineBand: [0, 0],
     voidScale: 0.46,
     spanScale: 0.42,
     /*
@@ -630,7 +651,8 @@ function detailFor(
 function skyline(rng: Rng, level: StratumId, count: number): SkylineShape[] {
   const floor = levelFloor(level);
   const out: SkylineShape[] = [];
-  if (count <= 0) return out;
+  const band = PROFILE[level].skylineBand;
+  if (count <= 0 || band[1] <= 0) return out;
 
   for (let i = 0; i < count; i += 1) {
     // Golden-angle spacing: even coverage without the visible periodicity a
@@ -638,7 +660,10 @@ function skyline(rng: Rng, level: StratumId, count: number): SkylineShape[] {
     const angle = i * 2.399963 + rng.range(-0.12, 0.12);
     const ring = i % 2;
     const depth = ring === 0 ? rng.range(0.35, 0.62) : rng.range(0.66, 1);
-    const radius = SPAN * (1.05 + depth * 1.5);
+    // Inside the fog, beyond the buildings. Both halves matter: outside the
+    // fog an impostor is a fog-coloured rectangle on a fog-coloured sky, and
+    // inside the footprint it is a flat cut-out standing among real geometry.
+    const radius = SPAN * (band[0] + depth * (band[1] - band[0]));
 
     /*
      * Megastructures.
@@ -653,9 +678,9 @@ function skyline(rng: Rng, level: StratumId, count: number): SkylineShape[] {
      * Sparse on purpose. A horizon where everything is enormous has no scale
      * at all, because scale is a comparison.
      */
-    const mega = i % 7 === 3;
+    const mega = ring === 1 && i % 7 === 3;
     const height = mega
-      ? rng.range(300, 560) * (1 - depth * 0.18)
+      ? rng.range(240, 430) * (1 - depth * 0.18)
       : rng.skewed(26, 132, 1.9) * (1 - depth * 0.28);
     const width = mega ? rng.range(90, 210) : rng.range(10, 34);
 

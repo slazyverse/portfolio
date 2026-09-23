@@ -169,11 +169,15 @@ describe("the landmark", () => {
 });
 
 describe("the horizon", () => {
-  it("gives every level a skyline so the world does not stop at its edge", () => {
+  it("gives every open level a skyline so the world does not stop at its edge", () => {
+    // Every level except the substrate, which is an interior now: it has a
+    // ceiling and piers, and a distant horizon inside a room would be a hole
+    // in the wall.
     for (const tier of TIERS) {
       const budget = environmentBudget(tier);
       for (const level of generateCity(tier).levels) {
-        expect(level.skyline.length).toBe(budget.skyline);
+        const expected = level.level === "substrate" ? 0 : budget.skyline;
+        expect(level.skyline.length, level.level).toBe(expected);
       }
     }
   });
@@ -183,6 +187,37 @@ describe("the horizon", () => {
     for (const level of generateCity("high").levels) {
       for (const s of level.skyline) {
         expect(Math.hypot(s.position[0], s.position[2])).toBeGreaterThan(half);
+      }
+    }
+  });
+
+  it("places the skyline inside the fog that is supposed to grade it", () => {
+    /*
+     * The one that was missed for two phases.
+     *
+     * The rings were authored at one to two and a half spans — 520 to 840
+     * metres — and the fog was later tightened to reach 430 at its most
+     * generous. Linear fog clamps at `far`, so every one of the 256 impostors
+     * in the city rendered as pure fog colour on a pure fog sky. The whole
+     * background layer existed in the model, cost its instances, and was
+     * invisible on all four levels.
+     *
+     * The ranges are the ones `lightRig` authors, restated here rather than
+     * imported because the generator has no business knowing about a renderer
+     * — but the two must agree, and this is what notices when they stop.
+     */
+    const FOG_FAR: Record<string, number> = {
+      surface: 430,
+      interface: 520,
+      engine: 330,
+      substrate: 120,
+    };
+    for (const level of generateCity("high").levels) {
+      for (const s of level.skyline) {
+        const radius = Math.hypot(s.position[0], s.position[2]);
+        expect(radius, `${level.level} impostor beyond its own fog`).toBeLessThan(
+          FOG_FAR[level.level]!,
+        );
       }
     }
   });
