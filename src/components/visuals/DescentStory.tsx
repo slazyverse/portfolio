@@ -8,6 +8,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
+import { environmentStandsDown } from "@/components/environment/standsDown";
+import { useEnvironment } from "@/components/environment/useEnvironment";
 import { useScrollCamera } from "@/hooks/useScrollCamera";
 import { useMotionAllowed } from "@/components/providers/MotionProvider";
 import { DESCENT } from "@/data/descent";
@@ -36,6 +39,8 @@ const RANGE = DESCENT.length;
 
 export function DescentStory() {
   const motion = useMotionAllowed();
+  const pathname = usePathname();
+  const { mode: envMode } = useEnvironment();
   const [active, setActive] = useState(0);
   const [near, setNear] = useState(false);
   const lastActive = useRef(0);
@@ -113,7 +118,22 @@ export function DescentStory() {
     invalidate.current?.();
   }, []);
 
-  const use3D = motion && webgl;
+  /*
+   * One WebGL context per page.
+   *
+   * As of Phase 6 the persistent city renders on the landing route, and two
+   * live contexts on one document is the thing Phase 5 found breaks a page
+   * outright — `/system` could not finish a frame while the laboratory and
+   * the global environment were both drawing. The city is the more important
+   * of the two here, so this scene yields to it.
+   *
+   * Nothing is lost by yielding. The stacked HTML below is the same content
+   * this scene paces, and it has been the path for every reader without WebGL
+   * since Phase 1: the story is the content, and the scene is a way of timing
+   * it.
+   */
+  const yieldGpu = !environmentStandsDown(pathname) && envMode === "webgl";
+  const use3D = motion && webgl && !yieldGpu;
 
   return (
     <>

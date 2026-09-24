@@ -1,8 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouteContext } from "@/components/chrome/useRouteContext";
+import { endSignal, noteBeat } from "@/components/landing/signal-store";
+import { useSignalState } from "@/components/landing/useSignal";
+import type { EntryBeat } from "@/lib/environment/entry-policy";
+import { environmentStandsDown } from "./standsDown";
 import { useEnvironment } from "./useEnvironment";
 
 /**
@@ -54,18 +58,18 @@ const Diagnostics =
  *
  * ## Where it stands down — and why it does not unmount
  *
- * Two routes own their own scene, so this layer hides on both rather than
- * drawing a second city behind someone else's:
+ * One route owns its own scene, so this layer hides there rather than drawing
+ * a second city behind someone else's: `/system`, the environment laboratory,
+ * whose whole purpose is to render the city at a tier this device may not have
+ * chosen. That was not a guess. With the global environment and the lab stage
+ * both live, `/system` was rendering two complete cities at once — one of them
+ * with a planar reflection pass — and the page could not finish a frame. A
+ * page that exists to let you look at the city carefully is the last place to
+ * be rendering it twice.
  *
- *   `/`         the landing, which still owns the descent scene
- *   `/system`   the environment laboratory, whose whole purpose is to render
- *               the city at a tier this device may not have chosen
- *
- * The second one was not a guess. With the global environment and the lab
- * stage both live, `/system` was rendering two complete cities at once — one
- * of them with a planar reflection pass — and the page could not finish a
- * frame. A page that exists to let you look at the city carefully is the last
- * place to be rendering it twice.
+ * The landing used to be on that list. It is not any more: as of Phase 6 the
+ * city *is* the landing, and the scroll-driven descent scene further down that
+ * page yields the GPU to it rather than opening a second context.
  *
  * It hides; it does not unmount. That distinction was earned. The first
  * version removed the canvas on `/` and rebuilt it on the way out, which looks
@@ -84,9 +88,26 @@ const Diagnostics =
 export function Environment() {
   const { level, pathname } = useRouteContext();
   const { mode, tier, motion, fail, failure } = useEnvironment();
+  const signal = useSignalState();
 
-  const ownsItsOwnScene = pathname === "/" || pathname === "/system";
+  const ownsItsOwnScene = environmentStandsDown(pathname);
   const active = !ownsItsOwnScene && mode !== "none";
+
+  /*
+   * The opening shot, handed to the renderer as data.
+   *
+   * The environment does not decide whether there is one — the landing does,
+   * from facts about this visit — and it does not know what the beats mean.
+   * It forwards them to the store and the hero reads them there. That keeps
+   * the camera and the headline in step without the layout knowing a headline
+   * exists.
+   */
+  const onBeat = useCallback((beat: EntryBeat) => noteBeat(beat), []);
+  const onDone = useCallback(() => endSignal(), []);
+  const entry =
+    signal.length === "none"
+      ? undefined
+      : { length: signal.length, onBeat, onDone };
 
   // Once the environment has been wanted, it stays mounted for the session.
   // Adjusting state during render rather than in an effect: this is derived
@@ -116,6 +137,7 @@ export function Environment() {
           // render loop to `never`, so a canvas nobody can see draws nothing.
           paused={!active}
           onFail={fail}
+          entry={entry}
           className="env-canvas"
         />
       )}

@@ -1,0 +1,101 @@
+/* ============================================================================
+   SUBSTRATE — the landing opening
+   ============================================================================
+
+   Two elements change during the opening and nothing else does: the telemetry
+   readout, which is only present while the camera is moving, and the subject
+   block, which arrives when the camera does.
+
+   The gate is `data-signal` on the document element, written once per phase by
+   the landing store — the same pattern `data-motion` already uses. CSS is the
+   right layer for this: the transition is a property change on two elements,
+   and routing it through React state would mean re-rendering the hero six
+   times to move an opacity.
+
+   THE DEFAULT IS VISIBLE. Everything below hides something only while
+   `data-signal="pending"` is set, which requires JavaScript to have run and an
+   opening to have actually started. No script, no WebGL, reduced motion, a
+   crawler, a failed hydration — none of them ever sets it, and the hero is
+   simply the page.
+   ========================================================================= */
+
+.signal-boot {
+  /* Absent unless an opening is running. It describes the camera, and with no
+     camera there is nothing to describe. */
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-precise);
+}
+
+[data-signal="pending"] .signal-boot {
+  opacity: 1;
+}
+
+[data-signal="pending"] .signal-subject {
+  /* Held back while the world establishes itself. Eight pixels and a fade —
+     the same entrance every other reveal on this site uses, so the hero
+     arrives as part of the system rather than as a special effect. */
+  opacity: 0;
+  transform: translate3d(0, 8px, 0);
+}
+
+.signal-subject {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--dur-slow) var(--ease-out-expo),
+    transform var(--dur-slow) var(--ease-out-expo);
+}
+
+/* The subject arrives on the beat that carries its name, not when the camera
+   finally stops. `subject` is the last move, so the heading settles while the
+   camera is still easing into rest — one event rather than two. */
+[data-signal="pending"] .signal[data-phase="subject"] .signal-subject {
+  opacity: 1;
+  transform: none;
+}
+
+[data-signal="pending"] .signal[data-phase="subject"] .signal-boot {
+  opacity: 0;
+}
+
+/* Reduced motion removes the transition, not the content. The hero is already
+   in its final state by default; this only stops it sliding if a phase change
+   lands while the preference is on. */
+[data-motion="reduced"] .signal-subject,
+[data-motion="reduced"] .signal-boot {
+  transition: none;
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-subject,
+  .signal-boot {
+    transition: none;
+  }
+}
+
+/* ----------------------------------------------------------------- scrim ---
+
+   The legibility scrim exists to hold text over a moving city. During the
+   opening there is no text over it — the subject is deliberately held back —
+   so the thing it protects does not exist yet, and at its ordinary strength it
+   was dimming the one shot the whole phase is built around.
+
+   It lifts for the three moves that reveal the world and returns on the move
+   that introduces the subject, which is the same moment the heading arrives.
+   The contrast suite asserts the resting values, and those are untouched: this
+   only ever relaxes a guard while there is nothing behind it to guard. */
+
+[data-signal-phase="signal"],
+[data-signal-phase="wake"],
+[data-signal-phase="reveal"] {
+  --env-scrim: 0.34;
+  --env-scrim-edge: 0.06;
+}
+
+.env::after {
+  transition:
+    opacity var(--dur-slow) var(--ease-precise),
+    background var(--dur-slow) var(--ease-precise);
+}

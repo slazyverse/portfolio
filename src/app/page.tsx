@@ -1,4 +1,4 @@
-import { Entry } from "@/components/sections/Entry";
+import { Signal } from "@/components/sections/Signal";
 import { Position } from "@/components/sections/Position";
 import { Descent } from "@/components/sections/Descent";
 import { CaseStudy } from "@/components/sections/CaseStudy";
@@ -16,13 +16,22 @@ import { STRATA } from "@/data/site";
 import { Reveal } from "@/components/effects/Reveal";
 
 /**
- * The descent, in order: surface → interface → engine → substrate.
- * Each case study composes the shared shell with its own bespoke visual.
+ * The landing.
+ *
+ * `Signal` is the signature frame: the city establishing scale behind it, the
+ * subject in front of it, and the five destinations underneath. Everything
+ * below it is the argument — the descent, the case studies, the record — in
+ * the same order it was in before, because the opening changed what the top of
+ * this page is, not what the page is for.
+ *
+ * The heading is the person now rather than the positioning statement. The
+ * statement did not go anywhere; it reads as the lead, which is where a
+ * positioning line belongs once the subject has been named.
  */
 export default function Home() {
   return (
     <main id="main">
-      <Entry />
+      <Signal />
       <Position />
       <Descent />
 

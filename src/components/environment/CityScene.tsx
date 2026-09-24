@@ -10,6 +10,12 @@ import {
   descentDuration,
   easeInOut,
 } from "@/lib/environment/camera";
+import {
+  entryShot,
+  sampleEntry,
+  type EntryBeat,
+  type EntryLength,
+} from "@/lib/environment/entry";
 import { generateCity } from "@/lib/environment/generate";
 import { environmentBudget } from "@/lib/environment/quality";
 import type { City, LevelEnvironment } from "@/lib/environment/types";
@@ -225,7 +231,31 @@ function FitToContainer() {
 
 /* ------------------------------------------------------------------ rig --- */
 
-function Rig({ level, motion }: { level: StratumId; motion: boolean }) {
+/**
+ * How the landing drives the camera.
+ *
+ * The opening is a property of the *page*, not of the renderer, so the
+ * renderer is told which shot to play and reports back which move it is on.
+ * Two callbacks and a length — no shared mutable state, no second camera, and
+ * nothing here knows what a headline is.
+ */
+export interface EntryPlayback {
+  length: EntryLength;
+  /** Fires once per move, when that move begins. */
+  onBeat?: (beat: EntryBeat) => void;
+  /** Fires once, when the camera reaches its resting transform. */
+  onDone?: () => void;
+}
+
+function Rig({
+  level,
+  motion,
+  entry,
+}: {
+  level: StratumId;
+  motion: boolean;
+  entry?: EntryPlayback;
+}) {
   const set = useThree((state) => state.set);
   const size = useThree((state) => state.size);
   const invalidate = useThree((state) => state.invalidate);
@@ -265,6 +295,38 @@ function Rig({ level, motion }: { level: StratumId; motion: boolean }) {
   const previous = useRef<StratumId>(level);
   const focus = useRef(new THREE.Vector3());
 
+  /*
+   * The opening shot, if this visit gets one.
+   *
+   * The keyframes are derived from the prop, so they are memoised rather than
+   * stashed in a ref — a ref read during render is a value React cannot see
+   * changing. What *is* a ref is the playback cursor: when the shot started,
+   * which move it is on, whether it has finished. Those are written by the
+   * frame loop, which is outside render by definition.
+   *
+   * An empty shot is the ordinary case — reduced motion, a returning visitor,
+   * a device that never starts a WebGL context — and costs one length check
+   * per frame.
+   */
+  const shot = useMemo(() => entryShot(entry?.length ?? "none"), [entry?.length]);
+  const entryStart = useRef(0);
+  const entryBeat = useRef<EntryBeat | null>(null);
+  const entryDone = useRef(true);
+
+  useEffect(() => {
+    // Zero means "armed but not started". The clock is set on the first frame
+    // rather than here, because the two can be seconds apart: React decides
+    // to play the shot the moment the mode resolves, and the renderer's first
+    // frame arrives after the city's textures have been generated and its
+    // geometry merged. Starting the clock here meant that on a slow machine
+    // the whole opening had already elapsed before a single frame of it was
+    // drawn — the visitor got the last keyframe and nothing else.
+    entryStart.current = 0;
+    entryBeat.current = null;
+    entryDone.current = shot.length === 0;
+    if (shot.length > 0) invalidate();
+  }, [shot, invalidate]);
+
   useEffect(() => {
     const camera = cam.current;
     if (!camera) return;
@@ -283,6 +345,52 @@ function Rig({ level, motion }: { level: StratumId; motion: boolean }) {
   useFrame(() => {
     const camera = cam.current;
     if (!camera) return;
+
+    /*
+     * While the opening runs it owns the camera outright.
+     *
+     * It is sampled from a pure function of elapsed time rather than
+     * integrated frame by frame, so a dropped frame changes how smooth the
+     * move looks and never where it ends up — and the last sample lands
+     * exactly on the transform the route camera would have chosen, which is
+     * what makes the handoff invisible rather than a cut.
+     */
+    if (!entryDone.current) {
+      if (entryStart.current === 0) entryStart.current = performance.now();
+      const sample = sampleEntry(shot, performance.now() - entryStart.current);
+      if (sample) {
+        camera.position.set(sample.position[0], sample.position[1], sample.position[2]);
+        focus.current.set(sample.lookAt[0], sample.lookAt[1], sample.lookAt[2]);
+        camera.lookAt(focus.current);
+        if (Math.abs(camera.fov - sample.fov) > 0.001) {
+          camera.fov = sample.fov;
+          camera.updateProjectionMatrix();
+        }
+
+        if (sample.beat !== entryBeat.current) {
+          entryBeat.current = sample.beat;
+          entry?.onBeat?.(sample.beat);
+        }
+
+        if (sample.done) {
+          entryDone.current = true;
+          // Hand the camera back where the route model expects to find it, so
+          // the first descent afterwards starts from rest rather than from
+          // wherever the shot happened to stop.
+          from.current = cameraTargetForLevel(level);
+          to.current = cameraTargetForLevel(level);
+          duration.current = 0;
+          start.current = performance.now();
+          previous.current = level;
+          entry?.onDone?.();
+        } else {
+          invalidate();
+        }
+        return;
+      }
+      entryDone.current = true;
+    }
+
     const elapsed = performance.now() - start.current;
     const t = duration.current <= 0 ? 1 : Math.min(elapsed / duration.current, 1);
     const k = easeInOut(t);
@@ -332,6 +440,7 @@ function Scene({
   palette,
   textures,
   paused,
+  entry,
 }: {
   city: City;
   level: StratumId;
@@ -340,6 +449,7 @@ function Scene({
   palette: Palette;
   textures: CityTextures;
   paused: React.RefObject<boolean>;
+  entry?: EntryPlayback;
 }) {
   const budget = environmentBudget(tier);
   const band: LevelEnvironment =
@@ -380,7 +490,7 @@ function Scene({
       )}
 
       <FitToContainer />
-      <Rig level={level} motion={motion} />
+      <Rig level={level} motion={motion} entry={entry} />
     </>
   );
 }
@@ -400,6 +510,13 @@ export interface CitySceneProps {
   paused?: boolean;
   /** Called when the renderer cannot continue — context loss, or creation failure. */
   onFail: (reason: string) => void;
+  /**
+   * The authored opening, when the landing route asks for one.
+   *
+   * Optional by design: every other route mounts this component without it
+   * and gets exactly the Phase 5 behaviour.
+   */
+  entry?: EntryPlayback;
   className?: string;
 }
 
@@ -409,6 +526,7 @@ export default function CityScene({
   motion,
   paused: stopped = false,
   onFail,
+  entry,
   className,
 }: CitySceneProps) {
   const palette = useMemo(() => readPalette(level), [level]);
@@ -504,6 +622,7 @@ export default function CityScene({
         palette={palette}
         textures={textures}
         paused={paused}
+        entry={entry}
       />
     </Canvas>
   );
