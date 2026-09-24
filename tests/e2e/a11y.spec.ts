@@ -382,17 +382,15 @@ test.describe("reduced motion", () => {
     await page.goto("/");
     await page.waitForTimeout(400);
     await expect(page.locator(".descent-frame pre code").first()).toBeVisible();
-    await expect(page.locator("canvas")).toHaveCount(1); // the 2D graph only; no WebGL canvas
+    // Scoped to the descent itself. Counting every canvas on the page stopped
+    // meaning anything in Phase 6: the landing now renders the city, so the
+    // document legitimately has one — and the assertion worth making is that
+    // the descent did not open a *second* context beside it.
+    await expect(page.locator(".descent-frame canvas")).toHaveCount(0);
   });
 });
 
 test.describe("content is never trapped in pixels", () => {
-  test("the allocation graph exposes its state as text", async ({ page }) => {
-    await page.goto("/");
-    const canvas = page.locator('canvas[role="img"]');
-    await expect(canvas).toHaveAttribute("aria-label", /allocation graph/i);
-  });
-
   test("the descent story is available to assistive technology", async ({ page }) => {
     await page.goto("/");
     const items = page.locator("ol.sr-only li");

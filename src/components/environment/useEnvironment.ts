@@ -15,6 +15,16 @@ export interface EnvironmentState {
   mode: EnvironmentMode;
   tier: QualityTier;
   motion: boolean;
+  /**
+   * Has the environment finished deciding?
+   *
+   * `mode` alone cannot answer that: `none` is both "not yet" and "never".
+   * The landing needs the difference, because resolving the opening against a
+   * `none` that simply had not arrived yet meant deciding there was no
+   * cinematic, revealing the hero, and then starting a camera move behind a
+   * page that had already introduced itself.
+   */
+  resolved: boolean;
   /** Reports an unrecoverable renderer failure. The environment steps down. */
   fail: (reason: string) => void;
   /** Why the environment stepped down, if it did. Development diagnostics only. */
@@ -91,5 +101,5 @@ export function useEnvironment(): EnvironmentState {
   });
   const mode: EnvironmentMode = ready ? resolved : "none";
 
-  return { mode, tier, motion, fail, failure };
+  return { mode, tier, motion, resolved: ready, fail, failure };
 }

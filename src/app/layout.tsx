@@ -94,6 +94,30 @@ try {
     m = matchMedia("(prefers-reduced-motion: reduce)").matches ? "reduced" : "full";
   }
   d.setAttribute("data-motion", m);
+
+  // The landing opening, decided before the first paint for the same reason
+  // the motion contract is. React cannot make this call early enough: by the
+  // time it hydrates, the hero has already been painted in its final state,
+  // and hiding it then is a flash of the ending followed by the beginning.
+  //
+  // Only two of the four inputs are knowable this early — the motion
+  // preference and whether this browser has already been shown the opening.
+  // That is deliberately the conservative half: both can only *prevent* an
+  // opening. Whether the device can render a city at all is settled after
+  // hydration, and if the answer is no the store clears this within a frame.
+  //
+  // The timeout is the safety net. If the bundle fails to execute, this
+  // attribute would otherwise hold the hero hidden forever, so it expires on
+  // its own and the page is simply the page.
+  if (location.pathname === "/" && m === "full" &&
+      !sessionStorage.getItem("substrate:signal-seen")) {
+    d.setAttribute("data-signal", "pending");
+    setTimeout(function () {
+      if (d.getAttribute("data-signal") === "pending") {
+        d.setAttribute("data-signal", "ready");
+      }
+    }, 7000);
+  }
 } catch (e) {}
 `;
 
