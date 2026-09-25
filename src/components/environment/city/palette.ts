@@ -1,4 +1,5 @@
 import type { StratumId } from "@/data/types";
+import type { LightSource } from "@/lib/environment/types";
 
 /**
  * The city's colours, read from the design system rather than chosen here.
@@ -72,6 +73,47 @@ export function readPalette(level: StratumId): Palette {
     fog: FOG_BY_LEVEL[level],
     hair: read(styles, "--hair-strong", "#222d3d"),
   };
+}
+
+/* ------------------------------------------------------------ fixtures --- */
+
+/**
+ * What each kind of lamp actually emits.
+ *
+ * Two of these are design tokens because they carry meaning the interface also
+ * carries — the subject and the machine. The other four are not tokens and
+ * should not become them: they are lamps, and a lamp's colour is a property of
+ * what is burning in it rather than a brand decision. Putting sodium orange in
+ * the stylesheet would invite somebody to reuse it as a UI colour, which is
+ * exactly the confusion the signal rule exists to prevent.
+ *
+ * The distances between them are the point. `interior` is a warm *white*, not
+ * an amber — that is what keeps `--accent` legible as the subject when both
+ * are in frame, and it is why the previous palette read as monochrome: with
+ * only saturated amber available, every warm thing in the city was the same
+ * colour as the person the city is about.
+ */
+export function lightSourceColour(source: LightSource, palette: Palette): string {
+  switch (source) {
+    // Occupied floors and frontage: 3000 K, and most of the city's warmth.
+    case "interior":
+      return "#ffd9b2";
+    // Old high-pressure sodium. Deliberately redder than `--accent` and used
+    // sparsely, so it reads as a dated fixture rather than as a signal.
+    case "sodium":
+      return "#ff7a3c";
+    case "warning":
+      return "#ff3b30";
+    // Always small. A green dot means a thing is powered and fine, which is
+    // information the eye should be able to find and then stop looking at.
+    case "utility":
+      return "#46d17f";
+    case "subject":
+      return palette.amber;
+    case "machine":
+    default:
+      return palette.cold;
+  }
 }
 
 /**

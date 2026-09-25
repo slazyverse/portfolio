@@ -220,14 +220,55 @@ function drawFacade(
   // Glazing is genuinely dark — it is a hole looking into an unlit room, and
   // it is the one surface here that should be near-black.
   const glass = rng.pick(["#141b26", "#101722", "#182030"]);
-  const lightColour = signal === "amber" ? [255, 176, 92] : [150, 205, 235];
+
+  /*
+   * What is burning behind the glass.
+   *
+   * This was one colour per facade — amber or cold, chosen by the variant —
+   * and it was the single largest cause of the city reading as monochrome.
+   * The facade atlas paints most of the lit pixels in any frame, so two
+   * colours here meant two colours everywhere, whatever else was done to the
+   * lights around them.
+   *
+   * A real tower has none of that uniformity. Tenants differ, so lamps
+   * differ: warm domestic and hotel light, the flat neutral of an office
+   * ceiling grid, the colder white of a floor full of equipment, the sodium
+   * still in older stock, and now and then the blue wash of a room lit only
+   * by a screen. These are lamp colours, not palette tokens, which is why
+   * they are written here as what they are.
+   *
+   * Assigned per floor rather than per window, for the same reason occupancy
+   * is: one tenant lights one floor, and a facade where every window is a
+   * different colour reads as a Christmas tree rather than as a building.
+   */
+  const INTERIOR = [
+    { rgb: [255, 214, 176], warm: 0.46, cool: 0.08 }, // domestic / hotel, 3000 K
+    { rgb: [246, 238, 220], warm: 0.26, cool: 0.2 }, // office ceiling grid
+    { rgb: [214, 232, 240], warm: 0.1, cool: 0.3 }, // equipment floor, 5000 K
+    { rgb: [150, 205, 235], warm: 0.04, cool: 0.32 }, // plant and data, cold
+    { rgb: [255, 154, 96], warm: 0.12, cool: 0.04 }, // older stock, sodium
+    { rgb: [118, 158, 255], warm: 0.02, cool: 0.06 }, // a room lit by a screen
+  ] as const;
+
+  const pickInterior = (): readonly number[] => {
+    const key = signal === "amber" ? "warm" : "cool";
+    const total = INTERIOR.reduce((sum, t) => sum + t[key], 0);
+    let r = rng.next() * total;
+    for (const tint of INTERIOR) {
+      r -= tint[key];
+      if (r <= 0) return tint.rgb;
+    }
+    return INTERIOR[0]!.rgb;
+  };
 
   // Occupancy runs. Offices empty a floor at a time, not a window at a time —
   // correlating the lit state along each floor is most of what separates this
   // from static.
   const floorLit: number[] = [];
+  const floorTint: (readonly number[])[] = [];
   for (let f = 0; f < floors; f += 1) {
     floorLit.push(rng.chance(0.55) ? rng.range(0.25, 0.95) : rng.range(0, 0.12));
+    floorTint.push(pickInterior());
   }
 
   for (let f = 0; f < floors; f += 1) {
@@ -278,7 +319,10 @@ function drawFacade(
        * fix costs one extra branch.
        */
       const warmth = rng.skewed(0.35, 1, 1.4);
-      const [r, g, b2] = lightColour;
+      // One window in roughly two hundred is something else entirely: a lit
+      // exit sign, a panel in alarm. Rare enough to be a detail somebody
+      // notices rather than a pattern.
+      const [r, g, b2] = rng.chance(0.005) ? [255, 96, 74] : floorTint[f]!;
       const paint = (scale: number) => {
         emissive.fillStyle = `rgb(${Math.round(r! * warmth * scale)},${Math.round(
           g! * warmth * scale,

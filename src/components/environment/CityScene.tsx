@@ -500,22 +500,23 @@ function Scene({
 
       <Masses city={city} textures={textures} />
       <KitPieces city={city} palette={palette} textures={textures} />
-      <Accents city={city} palette={palette} />
+      <Accents city={city} palette={palette} paused={paused} />
       <Conduits city={city} palette={palette} />
 
       {rains && (
         <Rain count={budget.rain} palette={palette} paused={paused} floor={band.floor} />
       )}
       {motion && budget.traffic > 0 && (
-        <Traffic
-          count={budget.traffic}
+        <Traffic count={budget.traffic} floor={band.floor} paused={paused} />
+      )}
+      {motion && budget.steam > 0 && (
+        <Steam
+          city={city}
           floor={band.floor}
+          plumes={budget.steam}
           palette={palette}
           paused={paused}
         />
-      )}
-      {motion && budget.groundFx && (
-        <Steam city={city} floor={band.floor} palette={palette} paused={paused} />
       )}
 
       <FitToContainer />
@@ -579,7 +580,7 @@ export default function CityScene({
   // are the only reason to hold the render loop open. Without them the
   // renderer is idle between route changes.
   const animating =
-    motion && (budget.rain > 0 || budget.groundFx || budget.traffic > 0);
+    motion && (budget.rain > 0 || budget.steam > 0 || budget.traffic > 0);
   const frameloop = stopped ? "never" : animating ? "always" : "demand";
 
   const paused = useRef(false);

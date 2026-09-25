@@ -25,7 +25,9 @@ import type {
   PartKind,
   EnvironmentAnchor,
   LevelEnvironment,
+  LightBehaviour,
   LightCell,
+  LightSource,
   Signal,
   SkylineShape,
   Structure,
@@ -476,6 +478,126 @@ function countFacadeCells(s: Structure, profile: LevelProfile): number {
   return rowsN * cols;
 }
 
+/**
+ * Which lamp this cell is, given where it is and what it means.
+ *
+ * Derived from the Phase 2 signal rather than replacing it. A cold level is
+ * plant and data, so its lights are machine indicators with the occasional
+ * service light and hazard; a warm level is occupied, so its lights are lit
+ * interiors — and *which* warm fixture depends on the district, which is the
+ * field that carries class. A corporate floor is lit by whatever its building
+ * services specify; the undercity is lit by whatever is still working.
+ *
+ * `subject` is absent by construction. `--accent` belongs to navigation
+ * objects and their signage, and a facade window may not borrow it.
+ */
+function lampFor(rng: Rng, s: Structure, profile: LevelProfile): LightSource {
+  if (profile.signal === "cold") {
+    const r = rng.next();
+    if (r < 0.8) return "machine";
+    if (r < 0.93) return "utility";
+    return "warning";
+  }
+
+  const r = rng.next();
+  switch (s.district) {
+    case "industrial":
+      if (r < 0.42) return "machine";
+      if (r < 0.72) return "sodium";
+      if (r < 0.88) return "warning";
+      return "utility";
+    case "undercity":
+      if (r < 0.55) return "sodium";
+      if (r < 0.77) return "interior";
+      if (r < 0.92) return "warning";
+      return "utility";
+    case "residential":
+      if (r < 0.92) return "interior";
+      if (r < 0.98) return "sodium";
+      return "utility";
+    // Corporate and commercial frontage is specified, maintained and warm.
+    default:
+      if (r < 0.86) return "interior";
+      if (r < 0.94) return "machine";
+      if (r < 0.98) return "utility";
+      return "warning";
+  }
+}
+
+/**
+ * What this lamp does over time.
+ *
+ * Weighted hard towards doing nothing. A hazard light always blinks because
+ * that is what a hazard light is for; everything else is overwhelmingly
+ * steady, and the few that are not are what the eye catches. Old sodium is the
+ * most unreliable fixture in the city, which is why the undercity is where the
+ * flicker lives.
+ */
+function behaviourFor(rng: Rng, source: LightSource): LightBehaviour {
+  if (source === "warning") return "blink";
+  const r = rng.next();
+  switch (source) {
+    case "sodium":
+      return r < 0.88 ? "steady" : "flicker";
+    case "utility":
+      return r < 0.8 ? "steady" : "breathe";
+    case "machine":
+      if (r < 0.86) return "steady";
+      return r < 0.98 ? "breathe" : "flicker";
+    default:
+      if (r < 0.95) return "steady";
+      return r < 0.99 ? "breathe" : "flicker";
+  }
+}
+
+/**
+ * Obstruction beacons on the tallest structures.
+ *
+ * Real tall buildings carry them, they are red, and they blink on their own
+ * period — which is why a skyline with them reads as a city that aircraft fly
+ * over and one without them reads as a model. Four cells at the crown, one per
+ * face, so the beacon is visible from any angle without a light source or a
+ * billboard.
+ *
+ * Exempt from the light quota and hard-capped at six structures per level,
+ * because the cost is bounded and the effect is not proportional to the count:
+ * a dozen beacons is a runway.
+ */
+function beaconLights(rng: Rng, structures: readonly Structure[], out: LightCell[]): void {
+  const tall = [...structures]
+    .filter((s) => s.size[1] > 60)
+    .sort((a, b) => b.size[1] - a.size[1])
+    .slice(0, 6);
+
+  for (const s of tall) {
+    const [x, y, z] = s.position;
+    const [w, h, d] = s.size;
+    // One period per tower, and deliberately not a round number — beacons
+    // that share a period read as one system being driven, which is the
+    // opposite of what several independent buildings look like.
+    const phase = rng.range(0, 9);
+    const faces = [
+      { ox: 0, oz: d / 2 + 0.05, rot: 0 },
+      { ox: 0, oz: -(d / 2 + 0.05), rot: Math.PI },
+      { ox: w / 2 + 0.05, oz: 0, rot: Math.PI / 2 },
+      { ox: -(w / 2 + 0.05), oz: 0, rot: -Math.PI / 2 },
+    ];
+    for (const face of faces) {
+      out.push({
+        position: [x + face.ox, y + h - 1.2, z + face.oz],
+        rotation: face.rot + s.rotation,
+        signal: "cold",
+        source: "warning",
+        behaviour: "blink",
+        phase,
+        intensity: 1,
+        size: 1.5,
+        fixed: true,
+      });
+    }
+  }
+}
+
 function facadeLights(
   rng: Rng,
   s: Structure,
@@ -505,10 +627,16 @@ function facadeLights(
         // Nudged off the wall so the quad never z-fights with the facade.
         const ox = face.nx * (d / 2 + 0.02) + (face.nx === 0 ? along : 0);
         const oz = face.nz * (w / 2 + 0.02) + (face.nz === 0 ? along : 0);
+        const source = lampFor(rng, s, profile);
         out.push({
           position: [x + ox, y + step * r, z + oz],
           rotation: face.rot + s.rotation,
           signal: profile.signal,
+          source,
+          behaviour: behaviourFor(rng, source),
+          // Spread across half a minute so no two fixtures on a facade are in
+          // step. Drawn from the seeded stream, so it is part of the city.
+          phase: rng.range(0, 30),
           // Windows are not identical. Varying intensity is most of what
           // separates a facade from a texture.
           intensity: rng.skewed(0.45, 1, 1.5),
@@ -1687,6 +1815,10 @@ function generateLevel(
       facadeLights(rng, s, profile, litProbability, lights);
     }
   }
+  // Beacons are added after the quota is spent and are exempt from it. There
+  // are at most six per level and they are the single clearest statement the
+  // skyline can make that the city is operating rather than modelled.
+  beaconLights(rng, structures, lights);
 
   return {
     level,
@@ -1732,6 +1864,20 @@ function thin<T>(items: readonly T[], keep: number): T[] {
   return out;
 }
 
+/**
+ * Thin a level's lights to its quota, keeping the ones that cannot be thinned.
+ *
+ * A quota of zero still means zero: the LOW tier draws no accent lights at all
+ * and a beacon is not an exception to that, because the tier that cannot
+ * afford a lit facade cannot afford a lit crown either.
+ */
+function thinLights(items: readonly LightCell[], keep: number): LightCell[] {
+  if (keep <= 0) return [];
+  const fixed = items.filter((l) => l.fixed);
+  const rest = items.filter((l) => !l.fixed);
+  return [...thin(rest, Math.max(0, keep - fixed.length)), ...fixed];
+}
+
 /** This level's hard ceiling on lit cells. */
 function lightQuota(tier: QualityTier, level: StratumId): number {
   return Math.floor(environmentBudget(tier).maxLights * PROFILE[level].lightShare);
@@ -1753,7 +1899,7 @@ export function generateCity(tier: QualityTier, seed: string = CITY_SEED): City 
     const generated = generateLevel(level, tier, seed);
     return {
       ...generated,
-      lights: thin(generated.lights, lightQuota(tier, level)),
+      lights: thinLights(generated.lights, lightQuota(tier, level)),
     };
   });
 

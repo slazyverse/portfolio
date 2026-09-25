@@ -81,6 +81,18 @@ export interface Part {
    */
   tilt: number;
   signal: Signal;
+  /**
+   * What kind of lamp an emissive part is.
+   *
+   * Optional because most parts are not lit at all. When it is absent, an
+   * emissive part falls back to a practical warm light or a machine
+   * indicator, which is what a street lamp, a shopfront and a plant readout
+   * respectively are — and which is the answer that keeps `--accent` from
+   * being the colour of every warm thing in the city.
+   *
+   * Set explicitly to `subject` on navigation objects, and nowhere else.
+   */
+  source?: LightSource;
   /** Which facade atlas cell a mass uses. */
   variant: number;
   /** 0..1. Drives grime, roughness and colour desaturation. */
@@ -138,21 +150,92 @@ export interface Structure {
 }
 
 /**
+ * What kind of lamp a lit cell is.
+ *
+ * `Signal` says what a light *means*; this says what it physically *is*, and
+ * the two are different questions that were being answered by one field. With
+ * only amber and cold available, every lit thing in the city was one of two
+ * hues, and the result read as a monochrome render with two filters on it.
+ *
+ * The Phase 2 rule is untouched and is in fact what this is derived from: warm
+ * light means people are here, cold light means the machine is. A sodium lamp
+ * over a loading bay and a lit office floor are both "people are here"; a
+ * hazard beacon and a powered-service indicator are both the machine
+ * reporting its state. The semantics did not need more colours. The city did.
+ *
+ * `subject` is the one that stays reserved. It is `--accent` itself, it marks
+ * navigation objects and their signage, and nothing else in the world may use
+ * it — which is only meaningful now that the city's own warmth is a different
+ * colour from the interface's.
+ */
+export type LightSource =
+  /** Old orange street lighting. Sparse: undercity and industrial frontage. */
+  | "sodium"
+  /** Occupied floors and commercial frontage. Warm white, and most of the warmth. */
+  | "interior"
+  /** Data, plant and telemetry. `--cold`. */
+  | "machine"
+  /** Hazard, obstruction, restricted access. Red. */
+  | "warning"
+  /** Powered, clear, in service. Green, and always small. */
+  | "utility"
+  /** `--accent`. Navigation objects only. */
+  | "subject";
+
+/**
+ * How a lamp behaves over time.
+ *
+ * Almost everything is steady, because almost everything is. A city where
+ * every light pulses is not alive, it is a screensaver — the life comes from
+ * the few that do something against the many that do not.
+ */
+export type LightBehaviour =
+  /** Does nothing. The overwhelming majority. */
+  | "steady"
+  /** A slow rise and fall. Plant under load, a sign on a dimmer. */
+  | "breathe"
+  /** An unreliable fixture. Occasional dropouts, never rhythmic. */
+  | "flicker"
+  /** A beacon or a hazard light. Hard on, hard off, on its own period. */
+  | "blink";
+
+/**
  * One lit cell — a window, a panel indicator, a status LED.
  *
  * Stored as flat data rather than as a scene node because at the high tier
- * there are well over a thousand of them and every one becomes a single
- * instance matrix in one `InstancedMesh`. They are never individual objects in
- * the scene graph.
+ * there are well over a thousand of them and every one becomes four vertices
+ * in one merged buffer. They are never individual objects in the scene graph.
  */
 export interface LightCell {
   position: readonly [number, number, number];
   /** Face normal as a yaw in radians, so the cell sits flat on its wall. */
   rotation: number;
   signal: Exclude<Signal, "none">;
+  /** The physical fixture. Decides the colour. */
+  source: LightSource;
+  /** What it does over time. Decides whether it moves. */
+  behaviour: LightBehaviour;
+  /**
+   * Seeded offset into this cell's own cycle, in seconds.
+   *
+   * Carried in the data rather than derived in the shader from the vertex
+   * index, so the same seed produces the same city doing the same things —
+   * two renders of a route at a tier are identical, including their motion.
+   */
+  phase: number;
   /** 0..1. Varies so the facade is not a uniform grid of identical dots. */
   intensity: number;
   size: number;
+  /**
+   * Exempt from the per-level thinning that enforces the light quota.
+   *
+   * Thinning keeps every nth cell, which is right for a facade — it removes a
+   * proportional share from every building — and wrong for anything whose
+   * meaning depends on all of it being present. A beacon with two of its four
+   * faces removed is not a dimmer beacon; it is a beacon that disappears when
+   * you walk round the building.
+   */
+  fixed?: boolean;
 }
 
 /** A run of cable, pipe or data line. Rendered as merged line segments. */

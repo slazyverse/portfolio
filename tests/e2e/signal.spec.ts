@@ -166,6 +166,50 @@ test.describe("the opening terminates", () => {
     expect(Number(opacity)).toBeGreaterThan(0.99);
   });
 
+  test("releases the subject on time even when the bundle arrives late", async ({
+    page,
+  }) => {
+    /*
+     * The slow-connection failure, reproduced.
+     *
+     * The head script withholds the subject before first paint and expires its
+     * own hold after the deadline — but a synchronous inline script does not
+     * run until the stylesheets before it have loaded, because it might ask
+     * for a computed style. So its clock started when the CSS arrived rather
+     * than when the navigation did, and the wait compounded with the thing
+     * that caused it: with the chunks held back six seconds, the subject was
+     * still hidden at twelve.
+     *
+     * Holding the static chunks back is what a slow connection does to them.
+     * The assertion is the promise the deadline was always making: the subject
+     * is readable by then, counted from the navigation.
+     */
+    await page.route("**/_next/static/**", async (route) => {
+      const url = route.request().url();
+      if (/chunks\//.test(url) && !/turbopack/.test(url)) {
+        await new Promise((r) => setTimeout(r, 4000));
+      }
+      await route.continue();
+    });
+
+    await page.goto("/", { waitUntil: "commit" });
+
+    await expect
+      .poll(
+        () => page.evaluate(() => document.documentElement.dataset.signal ?? "ready"),
+        { timeout: OPENING_MS },
+      )
+      .toBe("ready");
+
+    const held = await page.evaluate(() => Math.round(performance.now()));
+    // The deadline is seven seconds; the poll above cannot have passed after
+    // it without this failing, but stating the number makes the regression
+    // obvious rather than implicit.
+    expect(held, `subject withheld for ${held}ms`).toBeLessThan(8500);
+
+    await expect(page.locator("#entry-heading")).toBeVisible();
+  });
+
   test("never announces the camera to a screen reader", async ({ page }) => {
     await page.goto("/");
     // The readout describes decoration. A reader hearing "resolving structure"

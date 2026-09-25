@@ -6,6 +6,7 @@ import { useEnvironment } from "@/components/environment/useEnvironment";
 import { entryLength } from "@/lib/environment/entry-policy";
 import {
   beginSignal,
+  holdSignal,
   countLandingVisit,
   hasSeenSignal,
   markSignalSeen,
@@ -61,6 +62,19 @@ export function useSignalSequence(): void {
   const [arrival] = useState(() =>
     typeof window === "undefined" ? 0 : countLandingVisit(),
   );
+
+  /*
+   * Take over the document's speculative hold, once, on mount.
+   *
+   * The head script hid the subject before the bundle existed and expires its
+   * own hold on a clock that starts when it ran — which, for a synchronous
+   * inline script, is after the stylesheets it follows have loaded. On a slow
+   * connection that is the wrong clock. This re-bases the same deadline on
+   * hydration, which is a moment the application can see.
+   */
+  useEffect(() => {
+    holdSignal();
+  }, []);
 
   useEffect(() => {
     /*

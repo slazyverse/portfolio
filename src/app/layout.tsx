@@ -119,11 +119,20 @@ try {
   if (location.pathname === "/" && m === "full" &&
       !sessionStorage.getItem("substrate:signal-seen")) {
     d.setAttribute("data-signal", "pending");
+    // Counted from the navigation, not from this line.
+    //
+    // A synchronous inline script does not run until the stylesheets before
+    // it have loaded, because it might ask for a computed style — so on a slow
+    // connection this executes late and a fresh timer would stack its own wait
+    // on top of the one that delayed it. Measured, with the chunks held back
+    // six seconds: the subject was still hidden at twelve. performance.now()
+    // is time since the navigation began, so subtracting it keeps the promise
+    // the deadline was always making.
     setTimeout(function () {
       if (d.getAttribute("data-signal") === "pending") {
         d.setAttribute("data-signal", "ready");
       }
-    }, ${SIGNAL_DEADLINE_MS});
+    }, Math.max(0, ${SIGNAL_DEADLINE_MS} - performance.now()));
   }
 } catch (e) {}
 `;
