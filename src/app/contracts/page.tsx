@@ -99,18 +99,26 @@ export default function ContractsPage() {
                   </div>
                 </dl>
 
-                {contract.role && (
-                  <p className="t-small mt-8 max-w-[64ch] text-[var(--fg)]">
-                    <span className="t-label mr-3 text-[var(--fg-low)]">Role</span>
-                    {contract.role}
+                {/*
+                  Ownership, separated by a rule rather than by margin alone.
+                  The four facts above are metadata and these two are a claim
+                  about who did the work — stacked at similar weight with only
+                  space between them, a reader scans past the distinction.
+                */}
+                <div className="mt-8 border-t border-[var(--hair-faint)] pt-7">
+                  {contract.role && (
+                    <p className="t-small max-w-[64ch] text-[var(--fg)]">
+                      <span className="t-label mr-3 text-[var(--fg-low)]">Role</span>
+                      {contract.role}
+                    </p>
+                  )}
+
+                  <p className="t-mono mt-5 inline-block border-l-2 border-[var(--accent)] pl-4 text-[var(--fg-mid)]">
+                    {contract.attribution.summary}
                   </p>
-                )}
+                </div>
 
-                <p className="t-mono mt-6 inline-block border-l-2 border-[var(--accent)] pl-4 text-[var(--fg-mid)]">
-                  {contract.attribution.summary}
-                </p>
-
-                <p className="mt-9">
+                <p className="mt-8">
                   <Link
                     href={contractPath(contract.slug)}
                     className="btn"
