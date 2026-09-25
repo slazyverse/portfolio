@@ -1,6 +1,13 @@
-import { LEVEL_ORDER } from "@/data/routes";
-import type { StratumId } from "@/data/types";
-import { CAMERA_EYE, cameraAnchorXZ, cameraBearing, levelFloor } from "./generate";
+import { ANCHOR_SPECS } from "@/data/environment";
+import { LEVEL_ORDER, route } from "@/data/routes";
+import type { RouteId, StratumId } from "@/data/types";
+import {
+  CAMERA_EYE,
+  anchorPlacement,
+  cameraAnchorXZ,
+  cameraBearing,
+  levelFloor,
+} from "./generate";
 
 /**
  * The camera model.
@@ -121,6 +128,89 @@ export function cameraTargetForLevel(level: StratumId): CameraTarget {
      * compression the design system already applies to that level.
      */
     fov: level === "surface" ? 62 : 54 - i * 3,
+  };
+}
+
+/* ------------------------------------------------------------- by route --- */
+
+/**
+ * The most the camera will turn away from a level's own composition.
+ *
+ * Thirty degrees. Enough that two routes on the same level are unmistakably
+ * two different views; little enough that the shaft, the far wall and the drop
+ * are all still in frame, because those are what make the level read as the
+ * level. Beyond about this the camera starts facing a wall, and a portfolio
+ * that turns to face a wall when you open a page has made navigation into a
+ * thing that happens *to* the reader.
+ */
+const MAX_TURN = Math.PI / 6;
+
+/** Shortest signed angle from `a` to `b`, in radians. */
+function angleDelta(a: number, b: number): number {
+  return Math.atan2(Math.sin(b - a), Math.cos(b - a));
+}
+
+/**
+ * Where the camera stands to observe a *route*.
+ *
+ * The level decides where the camera is; the route decides what it faces. That
+ * distinction is the whole of Phase 9's spatial idea. Before this, every route
+ * on a level produced a byte-identical shot — `/dossier` and `/systems` are
+ * both Interface, so opening one after the other changed the text and nothing
+ * else, and the city was demonstrably a backdrop rather than a place.
+ *
+ * Now each route turns toward its own anchor: the terminal, the node array,
+ * the contract hub, the core. The standing position, eye height, pitch and
+ * lens are untouched, so the composition is the level's and only the heading
+ * differs — which is the difference between arriving somewhere and being
+ * moved somewhere.
+ *
+ * A route with no anchor is not an error and gets the level's own shot. Not
+ * every page needs a landmark, and inventing one for each would make none of
+ * them mean anything.
+ */
+export function cameraTargetForRoute(
+  routeId: RouteId,
+  /**
+   * The level to stand on, when it is not the route table's.
+   *
+   * Contracts are the reason. They share one route record and genuinely sit
+   * at different depths — deadlockd is substrate work and the other two are
+   * engine work — so the depth comes from the contract, exactly as it already
+   * does for the chrome and the page header. An anchor is only used when it
+   * is actually on the level being stood on; otherwise the camera would face
+   * a landmark two hundred metres above it.
+   */
+  levelOverride?: StratumId,
+): CameraTarget {
+  const level = levelOverride ?? route(routeId).level;
+  const base = cameraTargetForLevel(level);
+  const spec = ANCHOR_SPECS.find(
+    (s) => s.routeId === routeId && route(s.routeId).level === level,
+  );
+  if (!spec) return base;
+
+  const floor = levelFloor(level);
+  const bearing = cameraBearing(LEVEL_ORDER.indexOf(level)) + Math.PI;
+  const [ax, , az] = anchorPlacement(spec, floor, bearing);
+  const [cx, , cz] = base.position;
+
+  // The heading the anchor is actually on, from where the camera stands.
+  const toAnchor = Math.atan2(az - cz, ax - cx);
+
+  const turn = Math.max(-MAX_TURN, Math.min(MAX_TURN, angleDelta(bearing, toAnchor)));
+  const heading = bearing + turn;
+
+  return {
+    ...base,
+    // Same height and pitch as the level: only the heading moves. Aiming at
+    // the anchor's own height as well would tilt the camera off the horizon
+    // and lose the shaft, which is the composition the level is built on.
+    lookAt: [
+      Math.cos(heading) * FOCUS_DISTANCE,
+      base.lookAt[1],
+      Math.sin(heading) * FOCUS_DISTANCE,
+    ] as const,
   };
 }
 

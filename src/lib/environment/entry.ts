@@ -1,5 +1,5 @@
 import type { StratumId } from "@/data/types";
-import { cameraTargetForLevel, type CameraTarget } from "./camera";
+import { cameraTargetForRoute, type CameraTarget } from "./camera";
 import type { EntryBeat, EntryLength } from "./entry-policy";
 
 export { ENTRY_BEATS, entryLength } from "./entry-policy";
@@ -143,7 +143,7 @@ const FULL: readonly EntryKeyframe[] = [
     // The resting transform, exactly. From here the Phase 5 route camera
     // takes over and a level change is an ordinary descent.
     at: 5250,
-    ...cameraTargetForLevel("surface"),
+    ...cameraTargetForRoute("signal"),
     beat: "subject",
   },
 ];
@@ -167,7 +167,7 @@ const SHORT: readonly EntryKeyframe[] = [
     beat: "transit",
   },
   { at: 1900, position: [15.6, 6.4, 0.6], lookAt: [-150, 40, 0], fov: 58, beat: "subject" },
-  { at: 2500, ...cameraTargetForLevel("surface"), beat: "subject" },
+  { at: 2500, ...cameraTargetForRoute("signal"), beat: "subject" },
 ];
 
 export function entryShot(length: EntryLength): readonly EntryKeyframe[] {

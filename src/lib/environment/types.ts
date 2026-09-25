@@ -282,6 +282,15 @@ export interface EnvironmentAnchor {
   position: readonly [number, number, number];
   /** Primary anchors are landmarks; secondary ones are found once you look. */
   importance: "primary" | "secondary";
+  /**
+   * The landmark itself, as kit pieces.
+   *
+   * Anchors were data nobody drew for four phases. They are geometry now, and
+   * deliberately made of the same kinds every building is made of, so the
+   * whole set of landmarks joins meshes the city was already drawing and
+   * costs no draw call of its own.
+   */
+  parts: readonly Part[];
 }
 
 /**

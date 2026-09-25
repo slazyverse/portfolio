@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import type { StratumId } from "@/data/types";
+import type { RouteId, StratumId } from "@/data/types";
 import { QUALITY, type QualityTier } from "@/lib/capability";
 import {
-  cameraTargetForLevel,
+  cameraTargetForRoute,
   descentDuration,
   easeInOut,
 } from "@/lib/environment/camera";
@@ -256,10 +256,20 @@ export interface EntryPlayback {
 
 function Rig({
   level,
+  routeId,
   motion,
   entry,
 }: {
   level: StratumId;
+  /**
+   * The route the reader is on, which decides what the camera faces.
+   *
+   * The level still decides where it stands. Splitting the two is the whole
+   * of the spatial idea: before this, every route on a level produced a
+   * byte-identical shot, so moving between two pages at the same depth
+   * changed the text and nothing else.
+   */
+  routeId: RouteId;
   motion: boolean;
   entry?: EntryPlayback;
 }) {
@@ -276,7 +286,7 @@ function Rig({
    * is twenty lines; a dependency is forever.
    */
   const cam = useRef<THREE.PerspectiveCamera>(null);
-  const initial = cameraTargetForLevel(level);
+  const initial = cameraTargetForRoute(routeId, level);
 
   // Declared as a scene object and promoted to the default camera once it
   // exists. Mutating a node this component declared is fine; mutating a value
@@ -295,8 +305,8 @@ function Rig({
     invalidate();
   }, [size, invalidate]);
 
-  const from = useRef(cameraTargetForLevel(level));
-  const to = useRef(cameraTargetForLevel(level));
+  const from = useRef(cameraTargetForRoute(routeId, level));
+  const to = useRef(cameraTargetForRoute(routeId, level));
   const start = useRef(0);
   const duration = useRef(0);
   const previous = useRef<StratumId>(level);
@@ -342,12 +352,12 @@ function Rig({
       lookAt: [focus.current.x, focus.current.y, focus.current.z] as const,
       fov: camera.fov,
     };
-    to.current = cameraTargetForLevel(level);
+    to.current = cameraTargetForRoute(routeId, level);
     duration.current = descentDuration(previous.current, level, !motion);
     start.current = performance.now();
     previous.current = level;
     invalidate();
-  }, [level, motion, invalidate]);
+  }, [level, routeId, motion, invalidate]);
 
   useFrame(() => {
     const camera = cam.current;
@@ -366,8 +376,8 @@ function Rig({
     if (!entryDone.current && entryStart.current === 0) {
       if (entry?.onReady?.() === false) {
         entryDone.current = true;
-        from.current = cameraTargetForLevel(level);
-        to.current = cameraTargetForLevel(level);
+        from.current = cameraTargetForRoute(routeId, level);
+        to.current = cameraTargetForRoute(routeId, level);
         duration.current = 0;
         start.current = performance.now();
         previous.current = level;
@@ -406,8 +416,8 @@ function Rig({
           // Hand the camera back where the route model expects to find it, so
           // the first descent afterwards starts from rest rather than from
           // wherever the shot happened to stop.
-          from.current = cameraTargetForLevel(level);
-          to.current = cameraTargetForLevel(level);
+          from.current = cameraTargetForRoute(routeId, level);
+          to.current = cameraTargetForRoute(routeId, level);
           duration.current = 0;
           start.current = performance.now();
           previous.current = level;
@@ -464,6 +474,7 @@ function Rig({
 function Scene({
   city,
   level,
+  routeId,
   motion,
   tier,
   palette,
@@ -473,6 +484,7 @@ function Scene({
 }: {
   city: City;
   level: StratumId;
+  routeId: RouteId;
   motion: boolean;
   tier: QualityTier;
   palette: Palette;
@@ -499,7 +511,7 @@ function Scene({
       {budget.contactShade && <ContactShade city={city} />}
 
       <Masses city={city} textures={textures} />
-      <KitPieces city={city} palette={palette} textures={textures} />
+      <KitPieces city={city} routeId={routeId} palette={palette} textures={textures} />
       <Accents city={city} palette={palette} paused={paused} />
       <Conduits city={city} palette={palette} />
 
@@ -520,13 +532,15 @@ function Scene({
       )}
 
       <FitToContainer />
-      <Rig level={level} motion={motion} entry={entry} />
+      <Rig level={level} routeId={routeId} motion={motion} entry={entry} />
     </>
   );
 }
 
 export interface CitySceneProps {
   level: StratumId;
+  /** Which route is open. Decides the camera's heading, not its position. */
+  routeId: RouteId;
   tier: QualityTier;
   motion: boolean;
   /**
@@ -552,6 +566,7 @@ export interface CitySceneProps {
 
 export default function CityScene({
   level,
+  routeId,
   tier,
   motion,
   paused: stopped = false,
@@ -647,6 +662,7 @@ export default function CityScene({
       <Scene
         city={city}
         level={level}
+        routeId={routeId}
         motion={motion}
         tier={tier}
         palette={palette}
