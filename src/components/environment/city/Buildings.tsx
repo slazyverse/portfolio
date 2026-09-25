@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { CITY_GEOMETRY } from "@/lib/environment/generate";
 import type { City, LightSource, Part, Structure } from "@/lib/environment/types";
+import type { RouteId } from "@/data/types";
 import type { DistrictId } from "@/data/city-identity";
 import { FACADE_TILE, FACADE_VARIANTS, type CityTextures } from "./textures";
 import { lightSourceColour, type Palette } from "./palette";
@@ -495,10 +496,21 @@ function kitSpecs(): KitSpec[] {
  */
 export function KitPieces({
   city,
+  routeId,
   palette,
   textures,
 }: {
   city: City;
+  /**
+   * The route the reader is on, so its landmark can say so.
+   *
+   * This is the one place in the world allowed to use `--accent`. Phase 8
+   * reserved `subject` for navigation objects and then deliberately left it
+   * unused, because the city had no navigation objects in it. It does now,
+   * and exactly one of them is lit at a time: the place you are currently
+   * reading about.
+   */
+  routeId: RouteId;
   palette: Palette;
   textures: CityTextures;
 }) {
@@ -518,11 +530,33 @@ export function KitPieces({
       for (const p of level.fixtures) {
         byKind.get(p.kind)?.push(p);
       }
+      /*
+       * The landmarks, and the one that is lit.
+       *
+       * The active route's anchor has its emissive parts switched to the
+       * subject colour and brightened; every other anchor is drawn exactly as
+       * authored. Derived from the current route on each render rather than
+       * accumulated, so it is reversible by construction — there is no state
+       * to put back when the reader moves on, because there was never any
+       * state.
+       */
+      for (const anchor of level.anchors) {
+        const here = anchor.routeId === routeId;
+        for (const p of anchor.parts) {
+          byKind
+            .get(p.kind)
+            ?.push(
+              here && p.emissive > 0
+                ? { ...p, source: "subject", emissive: Math.min(1, p.emissive + 0.25) }
+                : p,
+            );
+        }
+      }
     }
     return specs
       .map((spec) => ({ spec, parts: byKind.get(spec.kind) ?? [] }))
       .filter((g) => g.parts.length > 0);
-  }, [city]);
+  }, [city, routeId]);
 
   useEffect(
     () => () => {

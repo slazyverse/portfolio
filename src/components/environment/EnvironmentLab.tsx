@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useMotionAllowed } from "@/components/providers/MotionProvider";
-import { LEVEL_NAME, LEVEL_ORDER, levelIndex, route } from "@/data/routes";
+import { LEVEL_NAME, LEVEL_ORDER, levelIndex, route, routeForLevel } from "@/data/routes";
 import type { StratumId } from "@/data/types";
 import { QUALITY, type QualityTier } from "@/lib/capability";
 import { generateCity } from "@/lib/environment/generate";
@@ -164,6 +164,9 @@ export function EnvironmentLab() {
             key={`${tier}-${QUALITY[tier].maxDpr}`}
             tier={tier}
             level={level}
+            // The laboratory looks at a level, so it faces that level's own
+            // primary destination — the same shot the site gives it.
+            routeId={routeForLevel(level).id}
             motion={motion && deviceMotion}
             onFail={setFailure}
             className="env-canvas"

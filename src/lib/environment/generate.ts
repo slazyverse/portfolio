@@ -10,6 +10,7 @@ import { LEVEL_ORDER, levelIndex, route } from "@/data/routes";
 import type { StratumId } from "@/data/types";
 import type { QualityTier } from "@/lib/capability";
 import {
+  anchorParts,
   composeBuilding,
   corporateMark,
   part,
@@ -718,23 +719,56 @@ function conduits(
  * anchor moves with it, with no second edit and no chance of the two
  * disagreeing.
  */
+/**
+ * Where an anchor stands, given its spec and the floor it belongs to.
+ *
+ * Exported because two systems now need the answer and only one of them may
+ * own it. The generator places the landmark here; the camera module turns
+ * toward it. A second copy of this arithmetic would be a landmark the camera
+ * does not quite look at, which is worse than no landmark at all.
+ */
+export function anchorPlacement(
+  spec: { bearing: number; importance: "primary" | "secondary" },
+  floor: number,
+  lookBearing: number,
+): readonly [number, number, number] {
+  /*
+   * The bearing is an offset from where the level looks, not an absolute
+   * compass heading.
+   *
+   * It was absolute for four phases, which was harmless while nothing drew
+   * these: the anchors were placed correctly around a circle and every one of
+   * them happened to be behind the camera. A landmark nobody can see from the
+   * only viewpoint in the world is not a landmark.
+   */
+  const angle = lookBearing + spec.bearing * Math.PI * 2;
+  const radius = spec.importance === "primary" ? VOID_RADIUS + 5 : VOID_RADIUS + 13;
+  return [
+    Math.cos(angle) * radius,
+    floor + (spec.importance === "primary" ? 9 : 4),
+    Math.sin(angle) * radius,
+  ] as const;
+}
+
 function anchorsFor(level: StratumId): EnvironmentAnchor[] {
   const floor = levelFloor(level);
+  // The direction this level's camera faces — across the shaft, away from
+  // where it stands. Anchors are placed relative to it so they are in shot.
+  const look = cameraBearing(LEVEL_ORDER.indexOf(level)) + Math.PI;
   return ANCHOR_SPECS.filter((spec) => route(spec.routeId).level === level).map(
     (spec) => {
-      const angle = spec.bearing * Math.PI * 2;
-      const radius = spec.importance === "primary" ? VOID_RADIUS + 5 : VOID_RADIUS + 13;
+      const position = anchorPlacement(spec, floor, look);
       return {
         id: spec.id,
         kind: spec.kind,
         routeId: spec.routeId,
         level,
-        position: [
-          Math.cos(angle) * radius,
-          floor + (spec.importance === "primary" ? 9 : 4),
-          Math.sin(angle) * radius,
-        ] as const,
+        position,
         importance: spec.importance,
+        // Turned to face the centre of the shaft, which is where the camera
+        // always stands. A landmark presenting its side to the only viewpoint
+        // in the world is a landmark nobody recognises.
+        parts: anchorParts(spec.kind, position, Math.atan2(-position[2], -position[0])),
       };
     },
   );

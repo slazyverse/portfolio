@@ -8,7 +8,7 @@ import {
   sampleEntry,
   type EntryBeat,
 } from "@/lib/environment/entry";
-import { cameraTargetForLevel } from "@/lib/environment/camera";
+import { cameraTargetForRoute } from "@/lib/environment/camera";
 import {
   ENTRY_DURATION_MS,
   SIGNAL_DEADLINE_MS,
@@ -64,7 +64,7 @@ describe("the opening shot is authored, not improvised", () => {
     // The handoff. If the last keyframe is even slightly off the transform the
     // route camera would have chosen, the cinematic ends with a jump — which
     // is the one thing a five-second reveal cannot afford at its final frame.
-    const rest = cameraTargetForLevel("surface");
+    const rest = cameraTargetForRoute("signal");
     for (const length of ["full", "short"] as const) {
       const shot = entryShot(length);
       const last = shot[shot.length - 1]!;
@@ -124,7 +124,7 @@ describe("the opening shot is authored, not improvised", () => {
       expect(s!.fov).toBeGreaterThan(20);
       expect(s!.fov).toBeLessThan(90);
     }
-    const rest = cameraTargetForLevel("surface");
+    const rest = cameraTargetForRoute("signal");
     const after = sampleEntry(shot, total + 10_000)!;
     expect(after.done).toBe(true);
     expect(after.position).toEqual(rest.position);

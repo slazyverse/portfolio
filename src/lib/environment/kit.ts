@@ -7,7 +7,7 @@ import {
 } from "@/data/city-identity";
 import type { StratumId } from "@/data/types";
 import type { Rng } from "./seed";
-import type { Part, PartKind, Signal, Structure } from "./types";
+import type { AnchorKind, Part, PartKind, Signal, Structure } from "./types";
 
 /* ---------------------------------------------------------------------------
  * The architectural grammar.
@@ -1438,4 +1438,135 @@ export function composeBuilding(input: ComposeInput): Structure {
     wear,
     parts,
   };
+}
+
+/* --------------------------------------------------------------- anchors --- */
+
+/**
+ * The landmarks: one authored silhouette per navigation anchor.
+ *
+ * These are the places the site's routes correspond to, and until now they
+ * were data nobody drew — the anchor model has existed since Phase 5, counted
+ * in the laboratory and rendered nowhere. The city therefore had four levels
+ * and no destinations in it, which is why it read as a backdrop.
+ *
+ * Built entirely from kit kinds that already exist, so every landmark joins an
+ * `InstancedMesh` the city was drawing anyway and the whole set costs no draw
+ * call at all. That constraint is also why they are assemblies of boxes,
+ * cylinders and one ring rather than modelled objects: a landmark has to be
+ * recognisable at two hundred metres in fog, and at that range a silhouette is
+ * the only thing that survives.
+ *
+ * Each is distinct in *shape*, not in colour. A reader who has seen the
+ * communication tower once should recognise it from anywhere in the shaft
+ * without reading a label, and none of these carries one.
+ */
+export function anchorParts(
+  kind: AnchorKind,
+  position: readonly [number, number, number],
+  bearing: number,
+): Part[] {
+  const [x, y, z] = position;
+  const out: Part[] = [];
+  const at = (
+    partKind: PartKind,
+    dx: number,
+    dy: number,
+    dz: number,
+    size: readonly [number, number, number],
+    extra: Partial<Part> = {},
+  ) => {
+    out.push(
+      part(
+        partKind,
+        [x + Math.cos(bearing) * dx - Math.sin(bearing) * dz, y + dy, z + Math.sin(bearing) * dx + Math.cos(bearing) * dz],
+        size,
+        bearing,
+        { wear: 0.35, ...extra },
+      ),
+    );
+  };
+
+  switch (kind) {
+    // A needle with a collar. The tallest thin thing in the world, and the
+    // one silhouette that reads at any distance.
+    case "communication-tower":
+      at("mast", 0, 9, 0, [0.9, 26, 0.9]);
+      at("platform", 0, 4, 0, [7, 0.5, 7]);
+      at("ring", 0, 17, 0, [3.4, 3.4, 0.5], { signal: "cold", source: "machine", emissive: 0.7 });
+      at("sign", 0, 22.5, 0, [1.1, 1.1, 1.1], { signal: "cold", source: "warning", emissive: 0.9 });
+      break;
+
+    // A wide low deck under a tall flat face: somewhere you arrive at and
+    // read something.
+    case "terminal":
+      at("platform", 0, 0, 0, [16, 1.2, 9]);
+      at("mass", -5, 5, 0, [1.4, 9, 6]);
+      at("mass", 5, 5, 0, [1.4, 9, 6]);
+      at("sign", 0, 7.5, 0, [11, 5, 0.5], { signal: "amber", source: "interior", emissive: 0.75 });
+      at("fin", 0, 2, -4.4, [12, 3.5, 0.6]);
+      break;
+
+    // A cluster, not a tower. Several equal things wired together, which is
+    // what a network looks like when you draw it as a building.
+    case "network-node":
+      for (let i = 0; i < 4; i += 1) {
+        const a = (i / 4) * Math.PI * 2;
+        at("tank", Math.cos(a) * 4.2, 3, Math.sin(a) * 4.2, [2.6, 6, 2.6]);
+        at("pipe", Math.cos(a) * 2.1, 5.6, Math.sin(a) * 2.1, [0.4, 0.4, 4.6], { tilt: 0.5 });
+      }
+      at("platform", 0, 0, 0, [12, 0.8, 12]);
+      break;
+
+    // A stack of filed things. Horizontal layers, deliberately: a record is
+    // something added to, and the shape says so.
+    case "contract-hub":
+      at("mass", 0, 6, 0, [14, 12, 10]);
+      for (let i = 0; i < 4; i += 1) {
+        at("platform", 0, 2.5 + i * 3, 0, [16.5, 0.7, 12], { wear: 0.4 });
+      }
+      at("fin", -7.2, 6, 0, [0.7, 13, 9]);
+      at("fin", 7.2, 6, 0, [0.7, 13, 9]);
+      at("sign", 0, 12.8, 5.2, [6, 1, 0.4], { signal: "amber", source: "interior", emissive: 0.6 });
+      break;
+
+    // Bedrock machinery: a heavy drum with services going into it.
+    case "infrastructure-core":
+      at("tank", 0, 4, 0, [9, 8, 9]);
+      at("platform", 0, 8.4, 0, [12, 0.8, 12]);
+      for (let i = 0; i < 6; i += 1) {
+        const a = (i / 6) * Math.PI * 2;
+        at("pipe", Math.cos(a) * 6, 2.2, Math.sin(a) * 6, [0.5, 4.4, 0.5]);
+      }
+      at("ring", 0, 9.6, 0, [5, 5, 0.6], { signal: "cold", source: "machine", emissive: 0.55 });
+      break;
+
+    // Low, long, closed. Storage rather than presence.
+    case "archive":
+      at("mass", 0, 2.6, 0, [13, 5, 7]);
+      for (let i = 0; i < 5; i += 1) {
+        at("fin", -5.2 + i * 2.6, 2.6, 3.6, [0.5, 5, 0.5]);
+      }
+      at("roofUnit", 0, 5.8, 0, [5, 1.4, 3]);
+      break;
+
+    // A thin vertical index: many small equal entries, one above another.
+    case "ledger":
+      at("mass", 0, 5, 0, [4.5, 10, 4.5]);
+      for (let i = 0; i < 7; i += 1) {
+        at("platform", 0, 1.2 + i * 1.4, 0, [5.6, 0.25, 5.6]);
+      }
+      at("sign", 0, 10.6, 0, [2.4, 0.8, 0.4], { signal: "cold", source: "utility", emissive: 0.7 });
+      break;
+
+    // A dish on a post, canted at the sky. Unmistakably something that sends.
+    case "relay":
+    default:
+      at("mast", 0, 5, 0, [0.6, 11, 0.6]);
+      at("sign", 0, 10.4, 0, [4.4, 0.6, 4.4], { tilt: -0.6, signal: "cold", source: "machine", emissive: 0.5 });
+      at("platform", 0, 0, 0, [6, 0.6, 6]);
+      break;
+  }
+
+  return out;
 }

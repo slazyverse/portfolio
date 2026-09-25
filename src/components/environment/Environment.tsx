@@ -86,7 +86,7 @@ const Diagnostics =
  * stopped outright, so a kept context costs memory and not a single frame.
  */
 export function Environment() {
-  const { level, pathname } = useRouteContext();
+  const { level, pathname, route } = useRouteContext();
   const { mode, tier, motion, fail, failure } = useEnvironment();
   const signal = useSignalState();
 
@@ -138,6 +138,11 @@ export function Environment() {
         <CityScene
           tier={tier}
           level={level}
+          // The camera stands by level and faces by route. A path with no
+          // route record — there is none, but the context types it as
+          // optional — falls back to the landing, which is the level's own
+          // composition.
+          routeId={route?.id ?? "signal"}
           motion={motion}
           // Hidden means stopped, not merely invisible: `paused` takes the
           // render loop to `never`, so a canvas nobody can see draws nothing.

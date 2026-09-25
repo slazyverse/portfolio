@@ -30,10 +30,16 @@ export interface AnchorSpec {
   routeId: RouteId;
   importance: "primary" | "secondary";
   /**
-   * Where the anchor sits on its level's footprint, as an angle in turns
-   * (0..1) around the central shaft. Authored rather than generated so that
-   * landmarks keep their bearings when the seed changes — the city may be
-   * reshuffled, but the tower is always to the north.
+   * Where the anchor sits, as a signed offset in turns from the direction its
+   * level's camera faces. Zero is dead ahead; roughly ±0.12 is the edge of a
+   * comfortable frame.
+   *
+   * Relative rather than absolute, and that is a correction. These were
+   * compass bearings for four phases, which was harmless while nothing drew
+   * them — the anchors sat correctly around a circle and every single one was
+   * behind the only camera in the world. Authored rather than generated so a
+   * landmark keeps its place when the seed changes: the city may be
+   * reshuffled, but the tower stays where you left it.
    */
   bearing: number;
 }
@@ -45,7 +51,7 @@ export const ANCHOR_SPECS: readonly AnchorSpec[] = [
     kind: "communication-tower",
     routeId: "signal",
     importance: "primary",
-    bearing: 0,
+    bearing: -0.02,
   },
 
   // 01 INTERFACE — where behaviour becomes visible.
@@ -54,14 +60,14 @@ export const ANCHOR_SPECS: readonly AnchorSpec[] = [
     kind: "terminal",
     routeId: "dossier",
     importance: "primary",
-    bearing: 0.16,
+    bearing: -0.07,
   },
   {
     id: "node-array",
     kind: "network-node",
     routeId: "systems",
     importance: "secondary",
-    bearing: 0.62,
+    bearing: 0.1,
   },
 
   // 02 ENGINE — where the work is done.
@@ -70,7 +76,7 @@ export const ANCHOR_SPECS: readonly AnchorSpec[] = [
     kind: "contract-hub",
     routeId: "contracts",
     importance: "primary",
-    bearing: 0.08,
+    bearing: 0.01,
   },
 
   // 03 SUBSTRATE — bedrock; facts, no ornament.
@@ -79,28 +85,28 @@ export const ANCHOR_SPECS: readonly AnchorSpec[] = [
     kind: "infrastructure-core",
     routeId: "record",
     importance: "primary",
-    bearing: 0.3,
+    bearing: -0.03,
   },
   {
     id: "archive",
     kind: "archive",
     routeId: "colophon",
     importance: "secondary",
-    bearing: 0.52,
+    bearing: -0.11,
   },
   {
     id: "ledger",
     kind: "ledger",
     routeId: "verify",
     importance: "secondary",
-    bearing: 0.74,
+    bearing: 0.08,
   },
   {
     id: "relay",
     kind: "relay",
     routeId: "contact",
     importance: "secondary",
-    bearing: 0.9,
+    bearing: 0.12,
   },
 ] as const;
 
