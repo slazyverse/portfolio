@@ -17,7 +17,14 @@ import type { Source } from "@/data/types";
  * to the index; there is no second place to update.
  */
 
-export type EvidenceKind = "claim" | "decision" | "attribution" | "principle";
+export type EvidenceKind =
+  | "claim"
+  | "decision"
+  | "architecture"
+  | "challenge"
+  | "next"
+  | "attribution"
+  | "principle";
 
 export interface EvidenceEntry {
   /** Stable key for lists and anchors. */
@@ -50,7 +57,10 @@ export function collectEvidence(): EvidenceEntry[] {
   const entries: EvidenceEntry[] = [];
 
   for (const contract of CONTRACTS) {
-    const href = contractPath(contract.slug);
+    // Linked to the section rather than the page. A reader following "where
+    // this appears" is checking one statement, and a dossier is long enough
+    // that landing at the top of it is the same as not linking at all.
+    const href = (anchor: string) => `${contractPath(contract.slug)}#${anchor}`;
 
     for (const claim of contract.claims) {
       entries.push({
@@ -58,7 +68,7 @@ export function collectEvidence(): EvidenceEntry[] {
         kind: "claim",
         statement: claim.statement,
         context: contract.name,
-        href,
+        href: href("what-it-does"),
         source: claim.source,
       });
     }
@@ -69,8 +79,19 @@ export function collectEvidence(): EvidenceEntry[] {
         kind: "claim",
         statement: result.statement,
         context: contract.name,
-        href,
+        href: href("results"),
         source: result.source,
+      });
+    }
+
+    if (contract.architecture?.source) {
+      entries.push({
+        id: `${contract.slug}-architecture`,
+        kind: "architecture",
+        statement: contract.architecture.summary,
+        context: contract.name,
+        href: href("architecture"),
+        source: contract.architecture.source,
       });
     }
 
@@ -80,8 +101,50 @@ export function collectEvidence(): EvidenceEntry[] {
         kind: "decision",
         statement: `Chose ${decision.choice} over ${decision.rejected}. ${decision.why}`,
         context: contract.name,
-        href,
+        href: href("decisions"),
         source: decision.source,
+      });
+    }
+
+    // A challenge may be stated without a source — some constraints are
+    // properties of the problem rather than of the code. Only the ones that
+    // point at something enter the index.
+    for (const challenge of contract.challenges ?? []) {
+      if (!challenge.source) continue;
+      entries.push({
+        id: `${contract.slug}-challenge-${slugify(challenge.problem)}`,
+        kind: "challenge",
+        statement: `${challenge.problem} ${challenge.resolution}`,
+        context: contract.name,
+        href: href("challenges"),
+        source: challenge.source,
+      });
+    }
+
+    for (const step of contract.nextIteration ?? []) {
+      if (!step.source) continue;
+      entries.push({
+        id: `${contract.slug}-next-${slugify(step.change)}`,
+        kind: "next",
+        statement: `${step.change} ${step.why}`,
+        context: contract.name,
+        href: href("next-iteration"),
+        source: step.source,
+      });
+    }
+
+    // The ownership summary itself, where there is somewhere to check it.
+    // On a team project this is the single most consequential sentence on the
+    // page, and leaving it out of the index while indexing the rows beneath
+    // it would be indexing the detail and not the claim.
+    if (contract.attribution.evidence) {
+      entries.push({
+        id: `${contract.slug}-attribution-summary`,
+        kind: "attribution",
+        statement: contract.attribution.summary,
+        context: contract.name,
+        href: href("attribution"),
+        source: contract.attribution.evidence,
       });
     }
 
@@ -94,7 +157,7 @@ export function collectEvidence(): EvidenceEntry[] {
         kind: "attribution",
         statement: `${entry.area} — ${entry.who}, ${entry.size}.`,
         context: contract.name,
-        href,
+        href: href("attribution"),
         source: entry.source,
       });
     }

@@ -195,6 +195,18 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.25rem 0.625rem;
+  /*
+    A source path is arbitrarily long and has no spaces in it — a nested
+    Python package is 38 characters before the filename — so left alone the
+    chip pushes the document wider than the viewport on a narrow screen.
+    Wrapping at the path separators keeps it inside the column and keeps the
+    path readable; `min-width: 0` lets it shrink inside the grid and flex
+    parents it sits in, which is where the overflow actually originates.
+  */
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   border: var(--hair-w) solid color-mix(in srgb, var(--accent) 28%, transparent);
   border-radius: var(--radius);
   font-family: var(--font-mono);

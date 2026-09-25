@@ -21,3 +21,4 @@ coverage/
 
 # visual QA frames from scripts/city-shots.mjs
 city-shots*/
+.shots/
