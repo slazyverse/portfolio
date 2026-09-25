@@ -85,11 +85,17 @@
    It lifts for the three moves that reveal the world and returns on the move
    that introduces the subject, which is the same moment the heading arrives.
    The contrast suite asserts the resting values, and those are untouched: this
-   only ever relaxes a guard while there is nothing behind it to guard. */
+   only ever relaxes a guard while there is nothing behind it to guard.
 
-[data-signal-phase="signal"],
-[data-signal-phase="wake"],
-[data-signal-phase="reveal"] {
+   Which is why it is gated on `pending` as well as on the phase. A second
+   arrival in the same session gets the short form with the subject already on
+   screen — the store will not take back a hero the document has painted — and
+   there the scrim is doing its actual job and must not be relaxed. Phase alone
+   would have lifted it out from under live text. */
+
+[data-signal="pending"][data-signal-phase="signal"],
+[data-signal="pending"][data-signal-phase="wake"],
+[data-signal="pending"][data-signal-phase="reveal"] {
   --env-scrim: 0.34;
   --env-scrim-edge: 0.06;
 }

@@ -127,6 +127,45 @@ module with no imports at all. The budget was not raised.
 
 ---
 
+## The fifth, found in production
+
+**The renderer and the deadline could contradict each other.** On an Intel HD
+520 the inline script's seven-second failsafe released the subject, the city's
+first frame arrived after that, the camera started its opening late, and the
+page took the subject back off the screen to introduce somebody who had already
+been introduced. It resolved correctly in the end, which is the worst kind of
+bug: nothing in a log, everything on the screen.
+
+Two clocks nobody controls — when this device manages to draw, and when the
+page runs out of patience — and either can win. The fix is not a longer
+failsafe. It is three things:
+
+**One deadline, shared.** `SIGNAL_DEADLINE_MS` is the moment the subject must
+be readable, measured from the start of the navigation. The inline head script
+and the landing store both read it from the same constant, so the two cannot
+drift apart. It was not increased.
+
+**The window works backwards from it.** An opening is only worth starting if it
+can *finish* on time, so the renderer has until `deadline − duration` to
+produce its first frame — 1.75 s for the full shot, 4.5 s for the short one.
+Miss it and the landing settles then, rather than holding a dark field until
+the deadline. On the machine that found this, the hero now arrives at about a
+second and three quarters instead of seven seconds.
+
+**Settling is terminal.** `beginSignal` arms an opening; it does not start one.
+The renderer's first usable frame asks `signalLive()` whether the opening is
+still wanted, synchronously, inside the frame callback — a round trip through
+React would let it draw the first move of a shot that had already been
+abandoned. A refusal leaves the camera where the route model put it, and a late
+beat that arrives anyway is dropped. The subject appears exactly once, in every
+ordering.
+
+An abandoned opening also reports a length of `none`, so a `CityScene` that
+finishes its dynamic import after the fact finds no shot to arm rather than one
+to be talked out of.
+
+---
+
 ## What the landing page gave back
 
 Removing the old hero and letting the descent scene yield the GPU took more out

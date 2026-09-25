@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import { useRouteContext } from "@/components/chrome/useRouteContext";
-import { endSignal, noteBeat } from "@/components/landing/signal-store";
+import { endSignal, noteBeat, signalLive } from "@/components/landing/signal-store";
 import { useSignalState } from "@/components/landing/useSignal";
 import type { EntryBeat } from "@/lib/environment/entry-policy";
 import { environmentStandsDown } from "./standsDown";
@@ -101,13 +101,19 @@ export function Environment() {
    * It forwards them to the store and the hero reads them there. That keeps
    * the camera and the headline in step without the layout knowing a headline
    * exists.
+   *
+   * `onReady` is the one that flows the other way. The landing cannot know
+   * when this device will manage its first frame, and the renderer cannot
+   * know whether the page has run out of patience, so the renderer asks at
+   * the only moment when both facts exist.
    */
+  const onReady = useCallback(() => signalLive(), []);
   const onBeat = useCallback((beat: EntryBeat) => noteBeat(beat), []);
   const onDone = useCallback(() => endSignal(), []);
   const entry =
     signal.length === "none"
       ? undefined
-      : { length: signal.length, onBeat, onDone };
+      : { length: signal.length, onReady, onBeat, onDone };
 
   // Once the environment has been wanted, it stays mounted for the session.
   // Adjusting state during render rather than in an effect: this is derived

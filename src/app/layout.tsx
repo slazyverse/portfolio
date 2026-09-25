@@ -6,6 +6,7 @@ import { SystemChrome } from "@/components/chrome/SystemChrome";
 import { Environment } from "@/components/environment/Environment";
 import { MotionProvider } from "@/components/providers/MotionProvider";
 import { RouteAnnouncer } from "@/components/layout/RouteAnnouncer";
+import { SIGNAL_DEADLINE_MS } from "@/lib/environment/entry-policy";
 import "./globals.css";
 
 /**
@@ -106,9 +107,15 @@ try {
   // opening. Whether the device can render a city at all is settled after
   // hydration, and if the answer is no the store clears this within a frame.
   //
-  // The timeout is the safety net. If the bundle fails to execute, this
-  // attribute would otherwise hold the hero hidden forever, so it expires on
-  // its own and the page is simply the page.
+  // The timeout is the safety net for one case only: the bundle never runs.
+  // Without it this attribute would hold the hero hidden forever, so it
+  // expires on its own and the page is simply the page.
+  //
+  // It is not the mechanism that ends a normal wait. The landing store owns
+  // the same deadline, works backwards from it, and settles at or before this
+  // point in every path — which is why this can no longer contradict a
+  // cinematic that is still coming. Both read ${SIGNAL_DEADLINE_MS} from one
+  // constant so they cannot drift apart.
   if (location.pathname === "/" && m === "full" &&
       !sessionStorage.getItem("substrate:signal-seen")) {
     d.setAttribute("data-signal", "pending");
@@ -116,7 +123,7 @@ try {
       if (d.getAttribute("data-signal") === "pending") {
         d.setAttribute("data-signal", "ready");
       }
-    }, 7000);
+    }, ${SIGNAL_DEADLINE_MS});
   }
 } catch (e) {}
 `;
