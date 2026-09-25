@@ -22,6 +22,13 @@ import { expect, test } from "@playwright/test";
  * scene, a camera that never reports it finished.
  */
 
+declare global {
+  interface Window {
+    /** Every distinct `data-signal` value this page load published, in order. */
+    __signalLog?: string[];
+  }
+}
+
 test.describe.configure({ mode: "serial" });
 
 const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
@@ -104,6 +111,61 @@ test.describe("the opening terminates", () => {
     expect(Number(opacity)).toBeGreaterThan(0.99);
   });
 
+  test("shows the subject exactly once, whichever clock wins", async ({ page }) => {
+    /*
+     * The regression. On a weak GPU the deadline released the hero at seven
+     * seconds, the city's first frame arrived after that, and the late camera
+     * start hid the subject again to play an introduction to somebody who had
+     * already been introduced. It ended in the right state, which is precisely
+     * why it needed watching rather than polling.
+     *
+     * The assertion is a monotonicity one and therefore true on every device:
+     * whatever order the renderer and the deadline arrive in, `pending` never
+     * follows `ready` within a page load.
+     */
+    await page.addInitScript(() => {
+      const log: string[] = [];
+      window.__signalLog = log;
+      new MutationObserver((records) => {
+        for (const record of records) {
+          const value = (record.target as Element).getAttribute("data-signal");
+          if (value && value !== log[log.length - 1]) log.push(value);
+        }
+      }).observe(document, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-signal"],
+      });
+    });
+
+    await page.goto("/");
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.dataset.signal ?? "ready"), {
+        timeout: OPENING_MS,
+      })
+      .toBe("ready");
+
+    // Well past the deadline, which is when a renderer that missed it would
+    // finally have produced the frame that used to restart everything.
+    await page.waitForTimeout(4000);
+
+    const log = await page.evaluate(() => window.__signalLog ?? []);
+    const resolved = log.indexOf("ready");
+    expect(log.length, `no signal transitions recorded: ${log.join(" → ")}`).toBeGreaterThan(0);
+    if (resolved !== -1) {
+      expect(
+        log.slice(resolved),
+        `the hero was taken back off the screen: ${log.join(" → ")}`,
+      ).toEqual(log.slice(resolved).map(() => "ready"));
+    }
+
+    await expect(page.locator("#entry-heading")).toBeVisible();
+    const opacity = await page
+      .locator(".signal-subject")
+      .evaluate((el) => getComputedStyle(el).opacity);
+    expect(Number(opacity)).toBeGreaterThan(0.99);
+  });
+
   test("never announces the camera to a screen reader", async ({ page }) => {
     await page.goto("/");
     // The readout describes decoration. A reader hearing "resolving structure"
@@ -142,6 +204,51 @@ test.describe("returning visitors", () => {
       window.sessionStorage.getItem("substrate:signal-seen"),
     );
     expect(seen).not.toBeNull();
+  });
+
+  test("never take back a subject the second visit already painted", async ({ page }) => {
+    /*
+     * The same flicker as the deadline race, seen from the other side.
+     *
+     * The inline head script withholds the subject on a first arrival only, so
+     * a reload inside the session paints the finished page straight away — and
+     * then the short form is decided a moment later. Hiding the hero to play
+     * it would be a page that introduced itself and changed its mind.
+     *
+     * The opening still runs behind it: the city is revealed and the scrim
+     * lifts. Only the subject stays put.
+     */
+    await page.goto("/");
+    await page.waitForTimeout(1200);
+
+    await page.addInitScript(() => {
+      const log: string[] = [];
+      window.__signalLog = log;
+      new MutationObserver((records) => {
+        for (const record of records) {
+          const value = (record.target as Element).getAttribute("data-signal");
+          if (value && value !== log[log.length - 1]) log.push(value);
+        }
+      }).observe(document, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-signal"],
+      });
+    });
+
+    await page.reload();
+    await expect(page.locator("#entry-heading")).toBeVisible();
+    await page.waitForTimeout(3500); // past the short form
+
+    const log = await page.evaluate(() => window.__signalLog ?? []);
+    expect(log, `the second visit hid its own hero: ${log.join(" → ")}`).not.toContain(
+      "pending",
+    );
+
+    const opacity = await page
+      .locator(".signal-subject")
+      .evaluate((el) => getComputedStyle(el).opacity);
+    expect(Number(opacity)).toBeGreaterThan(0.99);
   });
 });
 

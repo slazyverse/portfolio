@@ -236,11 +236,18 @@ function FitToContainer() {
  *
  * The opening is a property of the *page*, not of the renderer, so the
  * renderer is told which shot to play and reports back which move it is on.
- * Two callbacks and a length — no shared mutable state, no second camera, and
- * nothing here knows what a headline is.
+ * Three callbacks and a length — no shared mutable state, no second camera,
+ * and nothing here knows what a headline is.
  */
 export interface EntryPlayback {
   length: EntryLength;
+  /**
+   * The first frame this renderer is able to draw — the event the landing has
+   * been holding the subject back for. Answers whether the opening is still
+   * wanted: `false` means the deadline passed while the city was being built,
+   * the page has already introduced itself, and the camera must stay at rest.
+   */
+  onReady?: () => boolean;
   /** Fires once per move, when that move begins. */
   onBeat?: (beat: EntryBeat) => void;
   /** Fires once, when the camera reaches its resting transform. */
@@ -347,6 +354,29 @@ function Rig({
     if (!camera) return;
 
     /*
+     * The first frame is the event, not the effect that armed the shot.
+     *
+     * The two can be many seconds apart — React decides there is an opening as
+     * soon as the mode resolves, and this is the first moment the device has
+     * actually drawn anything. In that gap the landing may have run out of
+     * patience and shown the subject, and starting anyway is precisely what
+     * used to pull the hero back off the screen. So the landing is asked, and
+     * a refusal leaves the camera exactly where the route model put it.
+     */
+    if (!entryDone.current && entryStart.current === 0) {
+      if (entry?.onReady?.() === false) {
+        entryDone.current = true;
+        from.current = cameraTargetForLevel(level);
+        to.current = cameraTargetForLevel(level);
+        duration.current = 0;
+        start.current = performance.now();
+        previous.current = level;
+      } else {
+        entryStart.current = performance.now();
+      }
+    }
+
+    /*
      * While the opening runs it owns the camera outright.
      *
      * It is sampled from a pure function of elapsed time rather than
@@ -356,7 +386,6 @@ function Rig({
      * what makes the handoff invisible rather than a cut.
      */
     if (!entryDone.current) {
-      if (entryStart.current === 0) entryStart.current = performance.now();
       const sample = sampleEntry(shot, performance.now() - entryStart.current);
       if (sample) {
         camera.position.set(sample.position[0], sample.position[1], sample.position[2]);

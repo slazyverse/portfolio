@@ -77,3 +77,54 @@ export function entryLength(input: {
   // beautifully, and a six-second camera move is the first thing that goes.
   return input.tier === "balanced" ? "short" : "full";
 }
+
+/* ----------------------------------------------------------- the deadline --- */
+
+/**
+ * The moment the subject must be on screen, measured from the start of the
+ * navigation. One deadline, honoured by everything that can withhold the hero.
+ *
+ * This number is not a pacing choice; it is the promise. Whatever the device
+ * turns out to be, whatever the renderer does or fails to do, the portfolio is
+ * readable by here. The inline script in the document head enforces it for the
+ * case where the bundle never executes, and the landing store enforces it for
+ * every case where it does — both from this constant, so the two can never
+ * disagree about when the wait is over.
+ */
+export const SIGNAL_DEADLINE_MS = 7000;
+
+/**
+ * How long each opening takes, in the initial bundle.
+ *
+ * The authored keyframes live next door in `entry.ts`, which imports the
+ * camera, which imports the generator, which is the whole city — several
+ * hundred kilobytes the landing must not carry in order to answer a question
+ * about time. So the duration is restated here, and a test asserts it against
+ * the keyframes themselves. A restated number with a test on it is a fact in
+ * two places; a restated number without one is a bug waiting for a re-cut.
+ */
+export const ENTRY_DURATION_MS: Record<EntryLength, number> = {
+  full: 5250,
+  short: 2500,
+  none: 0,
+};
+
+/**
+ * The latest the renderer can produce its first frame and still be allowed to
+ * play this opening.
+ *
+ * Working backwards from the deadline rather than forwards from arrival is the
+ * whole fix. A shot is only worth starting if it can finish before the subject
+ * is due, so the window closes early on a slow machine — the visitor gets the
+ * page at about a second and three quarters instead of staring at a dark field
+ * until the full deadline, and there is no moment at which the hero is on
+ * screen while an opening is still coming for it.
+ */
+export function entryWindowMs(length: EntryLength): number {
+  return SIGNAL_DEADLINE_MS - ENTRY_DURATION_MS[length];
+}
+
+/** Can an opening of this length still finish on time, starting now? */
+export function entryFitsDeadline(length: EntryLength, elapsedMs: number): boolean {
+  return elapsedMs <= entryWindowMs(length);
+}

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ENTRY_BEATS,
   ENTRY_LEVEL,
@@ -10,11 +10,18 @@ import {
 } from "@/lib/environment/entry";
 import { cameraTargetForLevel } from "@/lib/environment/camera";
 import {
+  ENTRY_DURATION_MS,
+  SIGNAL_DEADLINE_MS,
+  entryFitsDeadline,
+  entryWindowMs,
+} from "@/lib/environment/entry-policy";
+import {
   beginSignal,
   countLandingVisit,
   endSignal,
   noteBeat,
   resetSignal,
+  signalLive,
   signalStore,
 } from "@/components/landing/signal-store";
 
@@ -269,5 +276,187 @@ describe("the landing state machine", () => {
     expect(countLandingVisit()).toBe(0);
     expect(countLandingVisit()).toBe(1);
     expect(countLandingVisit()).toBe(2);
+  });
+});
+
+/* -------------------------------------------------- the renderer's clock --- */
+
+/**
+ * The race this suite exists for.
+ *
+ * Found in production on an Intel HD 520: the deadline released the subject at
+ * seven seconds, the city's first frame arrived after that, the camera started
+ * its opening late, and the page took the subject back off the screen to play
+ * an introduction to someone who had already been introduced. It resolved
+ * correctly in the end, which is the worst kind of bug — nothing to see in a
+ * log and everything to see on the screen.
+ *
+ * Two clocks nobody controls: when this device manages to draw, and when the
+ * page runs out of patience. Either can win. So the contract asserted here is
+ * not about which one does — it is that the subject appears exactly once,
+ * whichever order they arrive in, and that a renderer which arrives late is
+ * told plainly not to start.
+ */
+describe("the renderer and the deadline cannot contradict each other", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetSignal();
+  });
+
+  afterEach(() => {
+    resetSignal();
+    vi.useRealTimers();
+  });
+
+  /** Every phase the store published, in order. */
+  function transcript(): { phases: string[]; stop: () => void } {
+    const phases: string[] = [];
+    const stop = signalStore.subscribe(() => phases.push(signalStore.getSnapshot().phase));
+    return { phases, stop };
+  }
+
+  /** Consecutive repeats collapsed, so the shape of the sequence is readable. */
+  function runs(phases: readonly string[]): string[] {
+    return phases.filter((phase, i) => phase !== phases[i - 1]);
+  }
+
+  it("keeps the whole opening inside the deadline, by construction", () => {
+    // The window is not a second timeout. It is the deadline with the shot
+    // subtracted, so a cinematic that starts at the last possible moment still
+    // ends exactly on time.
+    for (const length of ["full", "short"] as const) {
+      expect(entryWindowMs(length) + ENTRY_DURATION_MS[length]).toBe(SIGNAL_DEADLINE_MS);
+      expect(entryWindowMs(length)).toBeGreaterThan(0);
+    }
+  });
+
+  it("states each shot's duration the same way the keyframes do", () => {
+    // The landing has to answer a question about time without importing the
+    // city. That restatement is only safe while this holds.
+    for (const length of ["full", "short", "none"] as const) {
+      expect(ENTRY_DURATION_MS[length]).toBe(entryDuration(length));
+    }
+  });
+
+  it("plays in full when the renderer is drawing in time", () => {
+    const { phases, stop } = transcript();
+
+    beginSignal("full");
+    expect(signalStore.getSnapshot().phase).toBe("signal");
+
+    vi.advanceTimersByTime(400); // the city is generated and merged
+    expect(signalLive()).toBe(true);
+
+    for (const beat of ENTRY_BEATS) noteBeat(beat);
+    endSignal();
+
+    // And the window no longer exists: once the renderer is live, the shot's
+    // own last keyframe is what ends the landing.
+    vi.advanceTimersByTime(SIGNAL_DEADLINE_MS * 4);
+    stop();
+
+    // Collapsed, because each move inside `reveal` is its own notification —
+    // the readout names the move even when the phase has not changed.
+    expect(runs(phases)).toEqual(["signal", "wake", "reveal", "subject", "ready"]);
+    expect(signalStore.getSnapshot().phase).toBe("ready");
+  });
+
+  it("refuses a renderer that arrives after the deadline, instead of restarting", () => {
+    const { phases, stop } = transcript();
+
+    beginSignal("full");
+    vi.advanceTimersByTime(entryWindowMs("full") + 1);
+
+    // The page gave up and introduced itself. That is allowed.
+    expect(signalStore.getSnapshot().phase).toBe("ready");
+
+    // The city finishes building some seconds later. This is the frame that
+    // used to pull the hero back off the screen.
+    vi.advanceTimersByTime(20_000);
+    expect(signalLive()).toBe(false);
+
+    // Even a renderer that ignored the answer cannot un-introduce anybody.
+    noteBeat("wake");
+    noteBeat("transit");
+    stop();
+
+    expect(signalStore.getSnapshot().phase).toBe("ready");
+    expect(phases).toEqual(["signal", "ready"]);
+  });
+
+  it("hands nothing to a renderer that mounts after the landing gave up", () => {
+    beginSignal("short");
+    vi.advanceTimersByTime(entryWindowMs("short") + 1);
+
+    // `none` is what the environment reads to decide whether to pass a shot
+    // down at all, so a `CityScene` that finishes its dynamic import late
+    // finds no opening to arm rather than one to be talked out of.
+    expect(signalStore.getSnapshot().length).toBe("none");
+    expect(signalStore.getSnapshot().phase).toBe("ready");
+  });
+
+  it("reaches the finished page when the renderer never draws at all", () => {
+    beginSignal("full");
+    expect(signalStore.getSnapshot().phase).toBe("signal");
+
+    vi.advanceTimersByTime(SIGNAL_DEADLINE_MS * 10);
+
+    expect(signalStore.getSnapshot().phase).toBe("ready");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not arm anything for reduced motion, a phone, or a device without WebGL", () => {
+    const refused = [
+      { reducedMotion: true, seen: false, internal: false, tier: "high", webgl: true },
+      { reducedMotion: false, seen: false, internal: false, tier: "low", webgl: false },
+      { reducedMotion: false, seen: false, internal: false, tier: "high", webgl: false },
+    ] as const;
+
+    for (const input of refused) {
+      resetSignal();
+      beginSignal(entryLength(input));
+
+      // Immediate, with no timer left running and no camera to wait for: the
+      // page is simply the page, which is what every one of these asked for.
+      expect(signalStore.getSnapshot().phase).toBe("ready");
+      expect(vi.getTimerCount()).toBe(0);
+      expect(signalLive()).toBe(false);
+    }
+  });
+
+  it("gives up before arming when the page is already past the window", () => {
+    // A device that resolves its capabilities very late — the idle callback
+    // finally runs, the tier lands, and by then there is no time left. It is
+    // the same answer as a renderer that never drew, decided earlier.
+    expect(entryFitsDeadline("full", entryWindowMs("full") + 1)).toBe(false);
+    expect(entryFitsDeadline("full", entryWindowMs("full"))).toBe(true);
+    expect(entryFitsDeadline("short", SIGNAL_DEADLINE_MS)).toBe(false);
+    expect(entryFitsDeadline("none", SIGNAL_DEADLINE_MS)).toBe(true);
+  });
+
+  it("ignores a second decision while an opening is already under way", () => {
+    // The deciding effect re-runs as the device facts settle. Re-arming would
+    // restart the window underneath a camera that is already moving.
+    beginSignal("full");
+    vi.advanceTimersByTime(200);
+    expect(signalLive()).toBe(true);
+    noteBeat("wake");
+
+    beginSignal("short");
+    expect(signalStore.getSnapshot().phase).toBe("wake");
+    expect(signalStore.getSnapshot().length).toBe("full");
+  });
+
+  it("lets a failed renderer cancel the opening it was going to play", () => {
+    beginSignal("full");
+    expect(signalStore.getSnapshot().phase).toBe("signal");
+
+    // A lost context steps the environment down to `none`, the deciding effect
+    // re-runs, and the landing must resolve rather than wait out the window
+    // for a renderer that is never coming back.
+    beginSignal("none");
+
+    expect(signalStore.getSnapshot().phase).toBe("ready");
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
