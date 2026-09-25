@@ -150,18 +150,47 @@ export type ContractSection =
   | "nextIteration";
 
 /**
- * An engineering decision: what was chosen, what was rejected, and why.
+ * An engineering decision, in the four parts that make one worth reading.
  *
- * The source is mandatory. "I chose X over Y for reason Z, and here is the
- * commit" is the most convincing thing an engineer can show, and it is only
- * convincing while it remains checkable.
+ *   problem      the pressure that forced a choice
+ *   choice       what was done, and what was rejected
+ *   why          the reasoning, in the terms the problem was stated in
+ *   consequence  what the system can and cannot do as a result
+ *
+ * All four are required, and that is the point. A decision with no stated
+ * problem is a preference; one with no consequence is an opinion. The shape is
+ * what stops the section degenerating into a technology list.
+ *
+ * The source is mandatory for the same reason it is everywhere else on this
+ * site. "I chose X over Y for reason Z, and here is the file" is the most
+ * convincing thing an engineer can show, and it is only convincing while it
+ * remains checkable.
  */
 export interface Decision {
+  /** What forced the decision. */
+  problem: string;
   choice: string;
   /** The alternative that was not taken. The rejection is the informative half. */
   rejected: string;
   why: string;
+  /** What this bought, and what it cost. Stated even when the cost is real. */
+  consequence: string;
   source: Source;
+}
+
+/**
+ * A change the project itself says is next.
+ *
+ * Deliberately not a wish list. Each entry names something the repository
+ * already records as unfinished — an empty package, a blocked step, a hook
+ * with nothing in it — so "what I would do next" stays a fact about the code
+ * rather than an intention nobody can check. Where a project states no such
+ * thing, this is absent, which is the honest answer.
+ */
+export interface NextStep {
+  change: string;
+  why: string;
+  source?: Source;
 }
 
 /** Something that fought back, and what was done about it. */
@@ -227,6 +256,16 @@ export interface ArchitectureNote {
   summary: string;
   /** Ordered layers, shallow to deep, mirroring the site's own model. */
   layers?: { name: string; detail: string }[];
+  /**
+   * An ordered path through the system — what happens to one request, or one
+   * observation, from arrival to rest.
+   *
+   * Layers answer "what is this made of"; a flow answers "what happens". Some
+   * systems need both: a stack of layers says nothing about the order a
+   * request passes through them, and a pipeline says nothing about who owns
+   * each stage.
+   */
+  flow?: { stage: string; detail: string }[];
   source?: Source;
 }
 
@@ -241,6 +280,15 @@ export interface ArchitectureNote {
 export interface Contract extends Project {
   /** "CONTRACT 01". Stable; the future environment may key objects off it. */
   designation: string;
+  /**
+   * The engineering domain, in two or three words.
+   *
+   * The index needs a way to tell three projects apart at a glance that is not
+   * their name and not a score. What kind of engineering this is answers the
+   * question a reader is actually asking — "is there anything here I care
+   * about" — and it is a fact rather than a ranking.
+   */
+  domain: string;
   /** Which level of the system this work belongs to. */
   level: StratumId;
   objective?: Objective;
@@ -251,7 +299,7 @@ export interface Contract extends Project {
   result?: ResultClaim[];
   attribution: Attribution;
   lessons?: string[];
-  nextIteration?: string[];
+  nextIteration?: NextStep[];
   /** Per-section honesty ledger. Drives the internal content-gap report. */
   readiness: Partial<Record<ContractSection, ContentState>>;
 }

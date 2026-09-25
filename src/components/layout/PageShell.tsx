@@ -97,18 +97,37 @@ export function PageSection({
   title,
   index,
   lead,
+  anchor,
   children,
   className,
 }: {
   title: string;
   index?: string;
   lead?: string;
+  /**
+   * Overrides the id derived from the title, and puts it on the section
+   * itself so the region is linkable.
+   *
+   * A long dossier needs stable fragments — a reader who wants to send
+   * somebody the attribution should be able to send them the attribution.
+   * Derived from the title by default so that a section cannot acquire an
+   * anchor nobody can guess.
+   */
+  anchor?: string;
   children: React.ReactNode;
   className?: string;
 }) {
-  const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const id =
+    anchor ?? title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return (
-    <section aria-labelledby={`${id}-heading`} className={cn("py-12", className)}>
+    <section
+      id={id}
+      aria-labelledby={`${id}-heading`}
+      // Scroll margin, so a fragment lands below the fixed status bar rather
+      // than behind it. `scroll-mt` rather than an offset element: nothing is
+      // added to the document for a purely visual concern.
+      className={cn("scroll-mt-24 py-12", className)}
+    >
       <p className="system-label">
         {index && <span className="system-label-index">{index}</span>}
         <span>{title}</span>

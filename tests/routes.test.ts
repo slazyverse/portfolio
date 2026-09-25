@@ -311,7 +311,11 @@ describe("evidence index", () => {
       for (const claim of c.claims) known.add(claim.source.href);
       for (const r of c.result ?? []) known.add(r.source.href);
       for (const d of c.decisions ?? []) known.add(d.source.href);
+      for (const ch of c.challenges ?? []) if (ch.source) known.add(ch.source.href);
+      for (const n of c.nextIteration ?? []) if (n.source) known.add(n.source.href);
+      if (c.architecture?.source) known.add(c.architecture.source.href);
       for (const a of c.attribution.entries) if (a.source) known.add(a.source.href);
+      if (c.attribution.evidence) known.add(c.attribution.evidence.href);
     }
     for (const e of entries) {
       if (e.kind === "principle") continue;

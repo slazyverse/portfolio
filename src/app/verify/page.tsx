@@ -10,6 +10,9 @@ export const metadata: Metadata = routeMetadata("verify");
 const KIND_LABEL: Record<string, string> = {
   claim: "Claim",
   decision: "Decision",
+  architecture: "Architecture",
+  challenge: "Challenge",
+  next: "Open work",
   attribution: "Attribution",
   principle: "Principle",
 };
