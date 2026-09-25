@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import type { City } from "@/lib/environment/types";
-import type { Palette } from "./palette";
+import type { City, Part } from "@/lib/environment/types";
+import { lightSourceColour, type Palette } from "./palette";
 
 /* ---------------------------------------------------------------------------
  * Wet streets, without a reflection pass.
@@ -56,11 +56,10 @@ export function WetSheen({
     const up = new THREE.Vector3(0, 1, 0);
     const pos = new THREE.Vector3();
     const scale = new THREE.Vector3();
-    const amber = new THREE.Color(palette.amber);
-    const cold = new THREE.Color(palette.cold);
+
 
     /** One pool of light under a sign, if it is low enough and bright enough. */
-    const pool = (p: { kind: string; emissive: number; signal: string; position: readonly [number, number, number]; size: readonly [number, number, number]; rotation: number }, floor: number): boolean => {
+    const pool = (p: Part, floor: number): boolean => {
       if (p.kind !== "sign" || p.emissive < 0.55) return false;
       const height = p.position[1] - floor;
       if (height > 34) return false;
@@ -78,7 +77,18 @@ export function WetSheen({
         // 0.022, down from 0.06. With the camera at street height the near
         // pavement fills the bottom of the frame, and pools that read as a
         // wet sheen from nine metres up read as a flare from six.
-        (p.signal === "cold" ? cold : amber).clone().multiplyScalar(p.emissive * reach * 0.022),
+        /*
+         * The pool is the colour of the thing casting it.
+         *
+         * Every pool on the street used to be `--accent` or `--cold`, so the
+         * largest warm areas in any frame were the subject's own colour lying
+         * on the road. A sodium lamp pools orange and a shopfront pools warm
+         * white, and that is where most of the street's colour now comes
+         * from — from the lamps, rather than from a filter over the scene.
+         */
+        new THREE.Color(
+          lightSourceColour(p.source ?? (p.signal === "cold" ? "machine" : "interior"), palette),
+        ).multiplyScalar(p.emissive * reach * 0.022),
       );
       return true;
     };
@@ -115,9 +125,8 @@ export function WetSheen({
         }
       }
     }
-
     return { matrices, colours };
-  }, [city, palette.amber, palette.cold]);
+  }, [city, palette]);
 
   // A soft radial falloff. A hard-edged rectangle of light on a road reads as
   // a sticker; the gradient is what makes it read as a wet surface catching it.

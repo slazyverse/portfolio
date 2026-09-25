@@ -29,6 +29,8 @@ const TRAFFIC_VERTEX = /* glsl */ `
   attribute float aSpeed;
   attribute float aPhase;
   attribute float aHeight;
+  attribute float aSway;
+  attribute float aSwayRate;
   attribute vec3 aTint;
   attribute vec2 aCorner;
   varying vec3 vTint;
@@ -37,7 +39,13 @@ const TRAFFIC_VERTEX = /* glsl */ `
   void main() {
     // A vehicle is an angle and a radius. One uniform changes per frame, and
     // no position is ever uploaded.
-    float angle = aPhase + uTime * aSpeed;
+    //
+    // The sine term is not a wobble — it is added to *position*, so what it
+    // modulates is speed. Traffic bunches and opens out; a train slows to
+    // almost nothing on its own period, which is what arriving at a platform
+    // looks like from across a city. The amplitude is chosen against the rate
+    // so the derivative never crosses zero: nothing here ever reverses.
+    float angle = aPhase + uTime * aSpeed + aSway * sin(uTime * aSwayRate + aPhase * 3.1);
     vec3 centre = vec3(cos(angle) * aRadius, aHeight, sin(angle) * aRadius);
 
     // Elongate the streak along the direction of travel, in view space, so it
@@ -76,19 +84,17 @@ const TRAFFIC_FRAGMENT = /* glsl */ `
  * moving light.
  *
  * Lanes run both ways at several radii and heights: traffic on the street,
- * transit in the air above it. Amber runs one way and cold the other, which
- * keeps the palette semantics intact — the warm lights are where people are,
- * the cold ones are the machine moving itself.
+ * transit on the guideway above it. The colours are lamps rather than palette
+ * tokens — white towards you, red away, cool white for a lit carriage — which
+ * is why this component takes no palette at all.
  */
 export function Traffic({
   count,
   floor,
-  palette,
   paused,
 }: {
   count: number;
   floor: number;
-  palette: Palette;
   paused: React.RefObject<boolean>;
 }) {
   const material = useRef<THREE.ShaderMaterial>(null);
@@ -100,11 +106,27 @@ export function Traffic({
     const speed = new Float32Array(count * 4);
     const phase = new Float32Array(count * 4);
     const height = new Float32Array(count * 4);
+    const sway = new Float32Array(count * 4);
+    const swayRate = new Float32Array(count * 4);
     const tint = new Float32Array(count * 4 * 3);
     const index: number[] = [];
 
-    const amber = new THREE.Color(palette.amber);
-    const cold = new THREE.Color(palette.cold);
+    /*
+     * Headlights and tail lights, not palette colours.
+     *
+     * This ran `--accent` one way and `--cold` the other, which kept the
+     * signal semantics tidy and was wrong about traffic: a vehicle coming
+     * towards you shows white and one going away shows red, and that single
+     * fact is most of what makes a moving light read as a car rather than as
+     * a decoration travelling along a line. It also puts the only red in the
+     * street, at the only scale where red belongs there.
+     *
+     * The transit lane is different again — a train is lit by its own
+     * windows, so it is a long cool-white body rather than a pair of lamps.
+     */
+    const head = new THREE.Color("#fff0d6");
+    const tail = new THREE.Color("#ff2f22");
+    const carriage = new THREE.Color("#cfe4f2");
 
     for (let i = 0; i < count; i += 1) {
       // Deterministic lanes, derived from the index — the traffic is as
@@ -132,9 +154,30 @@ export function Traffic({
       const direction = lane % 2 === 0 ? 1 : -1;
       const sp = direction * (0.03 + ((i * 0.3247) % 1) * 0.045) * (street ? 1 : 0.6);
       const ph = (i * 2.399963) % (Math.PI * 2);
-      const length = street ? 1.1 + ((i * 0.754) % 1) * 1.4 : 1.8 + ((i * 0.569) % 1) * 2;
-      const thickness = street ? 0.3 : 0.42;
-      const colour = direction > 0 ? amber : cold;
+      // A train is a carriage, not a car. Long enough to read as one object
+      // at range, and slow enough that the eye follows it rather than losing
+      // it — which is the difference between "transit exists" and "transit
+      // runs".
+      const length = street ? 1.1 + ((i * 0.754) % 1) * 1.4 : 5.5 + ((i * 0.569) % 1) * 3;
+      const thickness = street ? 0.3 : 0.5;
+      const colour = street ? (direction > 0 ? head : tail) : carriage;
+
+      /*
+       * How much this vehicle's speed varies, and how often.
+       *
+       * The amplitude is derived from the speed and the rate rather than
+       * picked, because the constraint is arithmetic: the speed term is
+       * `aSpeed + aSway * aSwayRate * cos(...)`, so as long as
+       * `|aSway * aSwayRate|` stays under `|aSpeed|` the vehicle slows without
+       * ever running backwards.
+       *
+       * Street traffic keeps a wide margin and just bunches. A train takes it
+       * to 0.92, which means it decelerates to roughly a twelfth of cruise and
+       * holds there briefly — a stop, without a station timetable to simulate.
+       */
+      const swayRateHz = street ? 0.22 + ((i * 0.431) % 1) * 0.26 : 0.16;
+      const margin = street ? 0.45 + ((i * 0.911) % 1) * 0.3 : 0.92;
+      const swayAmount = (sp / swayRateHz) * margin;
 
       const corners: readonly (readonly [number, number])[] = [
         [-length, -thickness],
@@ -151,6 +194,8 @@ export function Traffic({
         speed[k] = sp;
         phase[k] = ph;
         height[k] = y;
+        sway[k] = swayAmount;
+        swayRate[k] = swayRateHz;
         tint[k * 3] = colour.r;
         tint[k * 3 + 1] = colour.g;
         tint[k * 3 + 2] = colour.b;
@@ -167,6 +212,8 @@ export function Traffic({
     g.setAttribute("aSpeed", new THREE.BufferAttribute(speed, 1));
     g.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
     g.setAttribute("aHeight", new THREE.BufferAttribute(height, 1));
+    g.setAttribute("aSway", new THREE.BufferAttribute(sway, 1));
+    g.setAttribute("aSwayRate", new THREE.BufferAttribute(swayRate, 1));
     g.setAttribute("aTint", new THREE.BufferAttribute(tint, 3));
     g.setIndex(index);
     g.boundingSphere = new THREE.Sphere(
@@ -175,7 +222,9 @@ export function Traffic({
     );
 
     return { geometry: g, uniforms: { uTime: { value: 0 } } };
-  }, [count, floor, palette.amber, palette.cold]);
+  // No palette dependency: traffic is lit by its own lamps, and headlights
+  // are not a design token.
+  }, [count, floor]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -246,11 +295,14 @@ const STEAM_FRAGMENT = /* glsl */ `
 export function Steam({
   city,
   floor,
+  plumes,
   palette,
   paused,
 }: {
   city: City;
   floor: number;
+  /** How many vents are active. Scaled by tier: the cost here is fill rate. */
+  plumes: number;
   palette: Palette;
   paused: React.RefObject<boolean>;
 }) {
@@ -268,7 +320,7 @@ export function Steam({
         }
       }
     }
-    const chosen = vents.slice(0, 90);
+    const chosen = vents.slice(0, plumes);
 
     const position = new Float32Array(chosen.length * 4 * 3);
     const corner = new Float32Array(chosen.length * 4 * 2);
@@ -319,7 +371,7 @@ export function Steam({
       count: chosen.length,
       uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(palette.fog) } },
     };
-  }, [city, floor, palette.fog]);
+  }, [city, floor, plumes, palette.fog]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 

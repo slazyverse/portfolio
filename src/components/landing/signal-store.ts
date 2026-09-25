@@ -1,4 +1,5 @@
 import {
+  SIGNAL_DEADLINE_MS,
   entryFitsDeadline,
   entryWindowMs,
   type EntryBeat,
@@ -179,6 +180,42 @@ export const signalStore = {
     return IDLE;
   },
 };
+
+/**
+ * Takes ownership of a hold the document started before the bundle existed.
+ *
+ * The inline script in the head withholds the subject speculatively, on the
+ * two facts knowable before first paint, and expires its own hold after the
+ * deadline. That expiry is measured from when the *script ran* — and a
+ * synchronous inline script cannot run until every stylesheet before it has
+ * loaded, because it might ask for a computed style. So on a slow connection
+ * the clock starts when the CSS arrives rather than when the navigation did,
+ * and the hold compounds with the thing that delayed it. Measured: with the
+ * chunks held back six seconds, the subject was still hidden at twelve.
+ *
+ * The fix is not a shorter or longer timeout. It is that the deadline should
+ * be counted from a moment the application can actually observe, and the
+ * first such moment is this one — the landing mounting, which is hydration.
+ * From here the store owns the hold and settles it on the same deadline it
+ * uses everywhere else.
+ *
+ * Does nothing when an opening is already governing the hold, and nothing at
+ * all when the document is not holding anything.
+ */
+export function holdSignal(): void {
+  if (typeof document === "undefined") return;
+  if (!settled || armed !== null) return;
+  if (document.documentElement.dataset.signal !== "pending") return;
+  // What is *left* of the deadline, not a fresh copy of it. `performance.now()`
+  // is measured from the navigation's time origin, so this is the same promise
+  // the head script was trying to keep, counted from the moment it should
+  // always have been counted from. When the bundle arrives after the deadline
+  // has already passed, the remainder is zero and the subject appears now.
+  armed = setTimeout(
+    () => settle("none"),
+    Math.max(0, SIGNAL_DEADLINE_MS - now()),
+  );
+}
 
 /**
  * Arms an opening — it does not start one.

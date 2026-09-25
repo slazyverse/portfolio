@@ -259,15 +259,21 @@ describe("tiers differ by fidelity, not only by count", () => {
     expect(balanced.skyline).toBeGreaterThan(low.skyline);
   });
 
-  it("spends ground effects at the top tier only", () => {
+  it("reduces ground effects by tier rather than switching them off", () => {
     // Phase 5B removed the planar reflection entirely: a second full render of
     // the scene, for a blurred grey mirror, while what reads as a wet street
     // is coloured light pooling on it. That is one instanced draw call now and
-    // it is not tier-gated, because it costs almost nothing. What remains
-    // gated is steam, which animates.
-    expect(ENVIRONMENT_BUDGET.high.groundFx).toBe(true);
-    expect(ENVIRONMENT_BUDGET.balanced.groundFx).toBe(false);
-    expect(ENVIRONMENT_BUDGET.low.groundFx).toBe(false);
+    // it is not tier-gated, because it costs almost nothing.
+    //
+    // Steam animates, so it is still scaled — but Phase 8 scales it rather
+    // than removing it. A middle-tier street with nothing moving on it read as
+    // dead rather than as cheaper, which is the failure a tier is supposed to
+    // avoid.
+    expect(ENVIRONMENT_BUDGET.high.steam).toBeGreaterThan(0);
+    expect(ENVIRONMENT_BUDGET.balanced.steam).toBeGreaterThan(0);
+    expect(ENVIRONMENT_BUDGET.balanced.steam).toBeLessThan(ENVIRONMENT_BUDGET.high.steam);
+    // LOW never starts a WebGL context at all.
+    expect(ENVIRONMENT_BUDGET.low.steam).toBe(0);
   });
 
   it("keeps generated texture memory inside a stated budget", () => {

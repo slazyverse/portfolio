@@ -95,6 +95,7 @@ export function part(
     rotation,
     tilt: extra.tilt ?? 0,
     signal: extra.signal ?? "none",
+    ...(extra.source ? { source: extra.source } : {}),
     variant: extra.variant ?? 0,
     wear: extra.wear ?? 0.5,
     emissive: extra.emissive ?? 0,

@@ -7,7 +7,7 @@ import type { StratumId } from "@/data/types";
 import { CITY_GEOMETRY } from "@/lib/environment/generate";
 import type { City, LevelEnvironment, LightCell } from "@/lib/environment/types";
 import type { CityTextures } from "./textures";
-import type { Palette } from "./palette";
+import { lightSourceColour, type Palette } from "./palette";
 
 /* ---------------------------------------------------------------------------
  * Everything in the world that is not a building.
@@ -359,48 +359,176 @@ function Rain({
  * overlapping cells brighten into a glow rather than occluding one another —
  * which is a bloom pass's result without a bloom pass.
  */
-function Accents({ city, palette }: { city: City; palette: Palette }) {
-  const cells = useMemo(() => city.levels.flatMap((l) => [...l.lights]), [city]);
+const ACCENT_VERTEX = /* glsl */ `
+  uniform float uTime;
+  attribute vec3 aTint;
+  attribute float aPhase;
+  attribute float aMode;
+  varying vec3 vTint;
+  varying float vLevel;
 
-  const fill = (mesh: THREE.InstancedMesh | null) => {
-    if (!mesh || cells.length === 0) return;
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const up = new THREE.Vector3(0, 1, 0);
-    const position = new THREE.Vector3();
-    const scale = new THREE.Vector3();
+  // Cheap deterministic hash, for flicker that is irregular without being
+  // random. Same input, same output, every frame and every reload.
+  float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+  void main() {
+    float t = uTime + aPhase;
+    float level = 1.0;
+
+    if (aMode > 2.5) {
+      // Blink. A hazard light is on for a short part of its period, which is
+      // what separates a beacon from a pulsing decoration.
+      float period = 2.6;
+      level = step(fract(t / period), 0.22);
+    } else if (aMode > 1.5) {
+      // Flicker. A failing fixture: mostly lit, with short irregular dropouts
+      // drawn from a hash of the current step rather than from noise, so two
+      // renders of this city fail in exactly the same places.
+      float step10 = floor(t * 9.0);
+      float r = hash(step10 + aPhase * 17.0);
+      level = r < 0.14 ? 0.18 + r : 1.0;
+    } else if (aMode > 0.5) {
+      // Breathe. Plant under load, a sign on a dimmer.
+      level = 0.72 + 0.28 * (0.5 + 0.5 * sin(t * 0.9));
+    }
+
+    vTint = aTint;
+    vLevel = level;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const ACCENT_FRAGMENT = /* glsl */ `
+  varying vec3 vTint;
+  varying float vLevel;
+  void main() {
+    gl_FragColor = vec4(vTint * vLevel, vLevel);
+  }
+`;
+
+/**
+ * Accent light — the city's lamps.
+ *
+ * Previously an `InstancedMesh` of identical additive quads in two colours,
+ * which is what made the whole world read as monochrome: every lit thing in
+ * the city was `--accent` or `--cold`, and a facade of amber dots next to a
+ * facade of cyan dots is a two-tone render however good the geometry is.
+ *
+ * Now every cell carries the colour of the fixture it is, and what that
+ * fixture does over time. The colours come from the world — lit interiors,
+ * old sodium, machine indicators, hazard beacons, service lights — and the
+ * behaviours are overwhelmingly "nothing", because a city where every light
+ * pulses is a screensaver.
+ *
+ * Merged quads rather than instances, which is the same trade `Traffic`
+ * already makes here: four vertices per cell is nothing, and it buys per-cell
+ * attributes and one shader driven by a single time uniform. Still one draw
+ * call, still no per-frame upload, and the animation costs a sine and a step.
+ */
+function Accents({
+  city,
+  palette,
+  paused,
+}: {
+  city: City;
+  palette: Palette;
+  paused: React.RefObject<boolean>;
+}) {
+  const material = useRef<THREE.ShaderMaterial>(null);
+
+  const { geometry, uniforms, count } = useMemo(() => {
+    const cells: LightCell[] = city.levels.flatMap((l) => [...l.lights]);
+    const n = cells.length;
+
+    const position = new Float32Array(n * 4 * 3);
+    const tint = new Float32Array(n * 4 * 3);
+    const phase = new Float32Array(n * 4);
+    const mode = new Float32Array(n * 4);
+    const index: number[] = [];
+
+    const MODE: Record<LightCell["behaviour"], number> = {
+      steady: 0,
+      breathe: 1,
+      flicker: 2,
+      blink: 3,
+    };
+
     const colour = new THREE.Color();
-    const amber = new THREE.Color(palette.amber);
-    const cold = new THREE.Color(palette.cold);
 
-    cells.forEach((cell: LightCell, i) => {
-      position.set(cell.position[0], cell.position[1], cell.position[2]);
-      scale.set(cell.size, cell.size * 1.3, 1);
-      q.setFromAxisAngle(up, cell.rotation);
-      mesh.setMatrixAt(i, m.compose(position, q, scale));
-      colour
-        .copy(cell.signal === "amber" ? amber : cold)
-        .multiplyScalar(cell.intensity);
-      mesh.setColorAt(i, colour);
+    cells.forEach((cell, i) => {
+      colour.set(lightSourceColour(cell.source, palette)).multiplyScalar(cell.intensity);
+
+      // The quad lies flat on its wall: `rotation` is the face yaw, so the
+      // cell's own right vector is that yaw turned into the ground plane and
+      // its up vector is the world's.
+      const hw = cell.size / 2;
+      const hh = (cell.size * 1.3) / 2;
+      const rx = Math.cos(cell.rotation);
+      const rz = -Math.sin(cell.rotation);
+      const [cx, cy, cz] = cell.position;
+
+      const corners: readonly (readonly [number, number])[] = [
+        [-hw, -hh],
+        [hw, -hh],
+        [hw, hh],
+        [-hw, hh],
+      ];
+
+      for (let v = 0; v < 4; v += 1) {
+        const k = i * 4 + v;
+        const [ax, ay] = corners[v]!;
+        position[k * 3] = cx + rx * ax;
+        position[k * 3 + 1] = cy + ay;
+        position[k * 3 + 2] = cz + rz * ax;
+        tint[k * 3] = colour.r;
+        tint[k * 3 + 1] = colour.g;
+        tint[k * 3 + 2] = colour.b;
+        phase[k] = cell.phase;
+        mode[k] = MODE[cell.behaviour];
+      }
+
+      const base = i * 4;
+      index.push(base, base + 1, base + 2, base, base + 2, base + 3);
     });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
-  };
 
-  if (cells.length === 0) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(position, 3));
+    g.setAttribute("aTint", new THREE.BufferAttribute(tint, 3));
+    g.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
+    g.setAttribute("aMode", new THREE.BufferAttribute(mode, 1));
+    g.setIndex(index);
+    g.computeBoundingSphere();
+
+    return { geometry: g, uniforms: { uTime: { value: 0 } }, count: n };
+  }, [city, palette]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  useFrame((_, delta) => {
+    if (paused.current || !material.current) return;
+    material.current.uniforms.uTime!.value += Math.min(delta, 0.05);
+  });
+
+  if (count === 0) return null;
 
   return (
-    <instancedMesh ref={fill} args={[undefined, undefined, cells.length]} frustumCulled>
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial
+    // Not frustum-culled, for the same reason `Traffic` is not: this is one
+    // merged buffer spanning the whole city, so its bounding sphere encloses
+    // everything and testing it can only ever produce a false negative. The
+    // first measured pass lost a draw call and 2,200 triangles here, which is
+    // not an optimisation — it is the city's lights being dropped.
+    <mesh geometry={geometry} frustumCulled={false}>
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        vertexShader={ACCENT_VERTEX}
+        fragmentShader={ACCENT_FRAGMENT}
         transparent
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
         side={THREE.DoubleSide}
-        toneMapped={false}
+        blending={THREE.AdditiveBlending}
       />
-    </instancedMesh>
+    </mesh>
   );
 }
 

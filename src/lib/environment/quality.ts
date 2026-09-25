@@ -81,6 +81,16 @@ export interface EnvironmentBudget {
    */
   groundFx: boolean;
   /**
+   * Steam plumes rising off vents in the street.
+   *
+   * A count rather than a flag, because the right answer at the middle tier
+   * turned out to be "fewer" rather than "none". Steam is one draw call
+   * whatever the count — the cost is fill rate, and fill rate scales with how
+   * many plumes are on screen — so a reduced number is a real reduction and
+   * an honest one.
+   */
+  steam: number;
+  /**
    * Vehicles in motion, as GPU-animated light streaks.
    *
    * The cheapest thing in the environment that makes it feel inhabited: two
@@ -145,6 +155,7 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
      */
     textureSize: 512,
     groundFx: true,
+    steam: 90,
     traffic: 340,
     contactShade: true,
     fixtureDetail: 1,
@@ -161,6 +172,9 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     skyline: 38,
     textureSize: 384,
     groundFx: false,
+    // Halved rather than cut. The street with no movement on it at all was
+    // the difference between BALANCED looking cheaper and looking dead.
+    steam: 38,
     traffic: 150,
     // Kept at BALANCED: it is one instanced draw call and it is most of what
     // makes a building look like it is standing on the ground.
@@ -185,6 +199,7 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     skyline: 20,
     textureSize: 256,
     groundFx: false,
+    steam: 0,
     traffic: 0,
     contactShade: false,
     fixtureDetail: 0.34,

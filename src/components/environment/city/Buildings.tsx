@@ -3,10 +3,22 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { CITY_GEOMETRY } from "@/lib/environment/generate";
-import type { City, Part, Structure } from "@/lib/environment/types";
+import type { City, LightSource, Part, Structure } from "@/lib/environment/types";
 import type { DistrictId } from "@/data/city-identity";
 import { FACADE_TILE, FACADE_VARIANTS, type CityTextures } from "./textures";
-import type { Palette } from "./palette";
+import { lightSourceColour, type Palette } from "./palette";
+
+/**
+ * What a lit part is, when it has not said.
+ *
+ * The signal still carries the meaning — warm is people, cold is the machine
+ * — and this turns that meaning into the ordinary fixture that would be
+ * there. Practical warm light for occupied frontage; a machine indicator for
+ * everything the city runs itself with.
+ */
+function defaultSource(signal: Part["signal"]): LightSource {
+  return signal === "amber" ? "interior" : "machine";
+}
 
 /* ---------------------------------------------------------------------------
  * The city's architecture, in two techniques.
@@ -560,8 +572,6 @@ function KitMesh({
     const colour = new THREE.Color();
 
     const base = new THREE.Color(spec.tint(palette));
-    const amber = new THREE.Color(palette.amber);
-    const cold = new THREE.Color(palette.cold);
 
     parts.forEach((p, i) => {
       position.set(p.position[0], p.position[1], p.position[2]);
@@ -576,9 +586,18 @@ function KitMesh({
       mesh.setMatrixAt(i, matrix.compose(position, quat, scale));
 
       if (spec.emissive && p.emissive > 0) {
-        colour.copy(p.signal === "amber" ? amber : cold).multiplyScalar(
-          0.55 + p.emissive * 0.9,
-        );
+        /*
+         * A lit part is a lamp, and a lamp's colour is its own.
+         *
+         * This read `p.signal === "amber" ? --accent : --cold`, which made
+         * every street lamp, shopfront and awning the same colour as the
+         * subject. The signal still decides the *family* — warm means people
+         * are here — but the fixture decides the hue, and a part that knows
+         * what it is says so.
+         */
+        colour
+          .set(lightSourceColour(p.source ?? defaultSource(p.signal), palette))
+          .multiplyScalar(0.55 + p.emissive * 0.9);
       } else {
         // Wear desaturates and darkens, and the kind decides how much light
         // the material returns at all. A city where every surface is the same
