@@ -744,10 +744,15 @@ export function corporateMark(
       break;
     }
     case "ring":
-      // Power and cooling: a closed loop.
+      // Power and cooling: a closed loop. Pushed directly rather than through
+      // `push` because a ring is centred on the mount rather than offset from
+      // it — which is exactly why it has to repeat `source` by hand. It did
+      // not, and the one corporation in the set that runs on a hazard circuit
+      // was the one whose mark never carried its own light.
       out.push(
         part("ring", [cx, cy, cz], [scale, scale, depth], rotation, {
           signal: s,
+          source: corp.light,
           emissive,
           wear: 0.2,
         }),

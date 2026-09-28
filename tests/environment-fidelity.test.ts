@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ANCHOR_SPECS } from "@/data/environment";
 import { CORPORATIONS } from "@/data/city-identity";
 import { generateCity } from "@/lib/environment/generate";
 import { ENVIRONMENT_BUDGET } from "@/lib/environment/quality";
@@ -153,6 +154,120 @@ describe("silhouette is bought with instances, not meshes", () => {
     for (let i = 0; i < a.length; i += 1) {
       expect(a[i]!.parts.length, a[i]!.id).toBe(b[i]!.parts.length);
       expect(a[i]!.position).toEqual(b[i]!.position);
+    }
+  });
+});
+
+/** How many parts one mark of each family is made of. */
+const MARK_PARTS: Record<string, number> = {
+  bars: 3,
+  chevron: 2,
+  ring: 1,
+  grid: 4,
+  wedge: 2,
+};
+
+describe("every corporation is somewhere in the city", () => {
+  /**
+   * The gap this closes.
+   *
+   * Phase 10 gave each corporation its own fixture and a test asserted the
+   * five were distinct — which they were, in the data. In the frame there
+   * were four. Two separate reasons, and the first one is why the second went
+   * unnoticed for a whole phase:
+   *
+   *  - the `ring` mark is centred on its mount rather than offset from it, so
+   *    it is pushed directly instead of through the shared helper, and the
+   *    helper was the only thing that attached `source`. Corrigan's mark was
+   *    in the world and lit by the wrong lamp.
+   *  - both mark tiers are gated on the host's height, and a corporation
+   *    whose entire portfolio is plant owns nothing tall enough for either.
+   *
+   * So the assertion is about the frame, not about the table: whatever the
+   * rolls do, every corporation holding property carries its own light
+   * somewhere, at every tier that draws marks at all.
+   */
+  const marksOf = (s: { parts: readonly { source?: string; emissive: number }[] }, light: string) =>
+    s.parts.filter((p) => p.source === light && p.emissive > 0).length;
+
+  for (const tier of ["high", "balanced", "low"] as const) {
+    it(`shows all five at ${tier}`, () => {
+      const structures = generateCity(tier).levels.flatMap((l) => l.structures);
+      for (const corp of CORPORATIONS) {
+        const held = structures.filter((s) => s.owner === corp.id);
+        if (held.length === 0) continue;
+        const marked = held.filter((s) => marksOf(s, corp.light) > 0);
+        expect(
+          marked.length,
+          `${corp.id} holds ${held.length} buildings at ${tier} and signs none of them`,
+        ).toBeGreaterThan(0);
+      }
+    });
+  }
+
+  it("signs a building once, never twice", () => {
+    // The floor adds a mark only to an owner that has none, so a building
+    // carrying two marks would mean it had double-counted — and a doubled
+    // mark is z-fighting geometry in the same place, not a louder sign.
+    const structures = generateCity("high").levels.flatMap((l) => l.structures);
+    for (const corp of CORPORATIONS) {
+      const expected = MARK_PARTS[corp.mark]!;
+      for (const s of structures.filter((x) => x.owner === corp.id)) {
+        const n = marksOf(s, corp.light);
+        if (n === 0) continue;
+        expect(n, `${s.id} carries ${n / expected} ${corp.mark} marks`).toBe(expected);
+      }
+    }
+  });
+
+  it("keeps the marks sparse", () => {
+    // A corporation's name on every door it owns is propaganda, not a city.
+    const structures = generateCity("high").levels.flatMap((l) => l.structures);
+    const marked = structures.filter((s) =>
+      s.parts.some((p) => p.source !== undefined && p.emissive > 0),
+    );
+    expect(marked.length).toBeGreaterThan(CORPORATIONS.length - 1);
+    expect(marked.length / structures.length).toBeLessThan(0.2);
+  });
+
+  it("places the same marks every time", () => {
+    // The floor draws no randomness, which is the whole reason it is safe to
+    // run after the lighting quota has already been spent.
+    const key = (tier: "high") =>
+      generateCity(tier)
+        .levels.flatMap((l) => l.structures)
+        .filter((s) => s.owner !== undefined)
+        .map(
+          (s) =>
+            `${s.id}:${s.parts
+              .filter((p) => p.source !== undefined && p.emissive > 0)
+              .map((p) => `${p.kind}@${p.position.map((v) => v.toFixed(3)).join(",")}`)
+              .join("|")}`,
+        )
+        .join(";");
+    expect(key("high")).toBe(key("high"));
+  });
+});
+
+describe("one landmark is lit, and it is the reader's", () => {
+  it("gives no route two landmarks to be standing at", () => {
+    // The render applies `subject` to every anchor whose routeId matches the
+    // current route. Two anchors on one route would light two places at once
+    // and the colour would stop meaning "here".
+    const seen = new Set<string>();
+    for (const spec of ANCHOR_SPECS) {
+      expect(seen.has(spec.routeId), `${spec.routeId} has more than one landmark`).toBe(false);
+      seen.add(spec.routeId);
+    }
+  });
+
+  it("matches at most one anchor for any route in the world", () => {
+    const anchors = generateCity("high").levels.flatMap((l) => l.anchors);
+    for (const spec of ANCHOR_SPECS) {
+      expect(
+        anchors.filter((a) => a.routeId === spec.routeId).length,
+        `${spec.routeId}`,
+      ).toBe(1);
     }
   });
 });
