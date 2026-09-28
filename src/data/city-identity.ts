@@ -1,4 +1,5 @@
 import type { StratumId } from "./types";
+import type { LightBehaviour, LightSource } from "@/lib/environment/types";
 
 /* ---------------------------------------------------------------------------
  * Who owns this city, and who lives in it.
@@ -180,6 +181,19 @@ export interface Corporation {
   /** Shape family for signage: bars, a chevron, a ring, a grid, a wedge. */
   mark: "bars" | "chevron" | "ring" | "grid" | "wedge";
   signal: "amber" | "cold";
+  /**
+   * The lamp this corporation lights its own buildings with.
+   *
+   * A corporation whose identity is only a signal colour and a sign shape is
+   * a colour-coded marker. What makes an institution recognisable in a city
+   * is duller and more specific than a logo: the temperature of the light in
+   * its lobbies, whether its mark is on a dimmer or a hazard circuit, whether
+   * its frontage is maintained. Two of these run cold and three warm, and no
+   * two run the same fixture.
+   */
+  light: LightSource;
+  /** What its mark does. A power company blinks; an office block does not. */
+  markBehaviour: LightBehaviour;
   /** How aggressively this corporation signs its buildings. */
   presence: number;
 }
@@ -190,6 +204,9 @@ export const CORPORATIONS: readonly Corporation[] = [
     name: "Allocation Holdings",
     mark: "bars",
     signal: "cold",
+    // Clinical, always on, never varies. The landlord.
+    light: "machine",
+    markBehaviour: "steady",
     presence: 0.95,
   },
   {
@@ -197,6 +214,9 @@ export const CORPORATIONS: readonly Corporation[] = [
     name: "Meridian Interchange",
     mark: "chevron",
     signal: "amber",
+    // Transit and commerce: warm frontage on a dimmer.
+    light: "interior",
+    markBehaviour: "breathe",
     presence: 0.8,
   },
   {
@@ -204,6 +224,10 @@ export const CORPORATIONS: readonly Corporation[] = [
     name: "Corrigan Power & Cooling",
     mark: "ring",
     signal: "amber",
+    // Power and cooling. Its plant is hazard-lit because its plant is a
+    // hazard, and its mark sits on the same circuit.
+    light: "warning",
+    markBehaviour: "blink",
     presence: 0.65,
   },
   {
@@ -211,6 +235,9 @@ export const CORPORATIONS: readonly Corporation[] = [
     name: "Vantage Substrate Group",
     mark: "grid",
     signal: "cold",
+    // Data. Green service indicators, and nothing about it moves.
+    light: "utility",
+    markBehaviour: "steady",
     presence: 0.9,
   },
   {
@@ -218,6 +245,9 @@ export const CORPORATIONS: readonly Corporation[] = [
     name: "Keelson Residential Trust",
     mark: "wedge",
     signal: "amber",
+    // Older residential stock, still on the sodium it was built with.
+    light: "sodium",
+    markBehaviour: "steady",
     presence: 0.45,
   },
 ] as const;

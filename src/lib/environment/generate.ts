@@ -83,6 +83,16 @@ const SPAN = 330;
  */
 const VOID_RADIUS = 46;
 
+/**
+ * How much ground a landmark keeps to itself, in metres.
+ *
+ * Sized against the landmarks rather than picked: the widest of them is the
+ * contract hub at sixteen metres across, and a structure cell is placed at its
+ * centre with a footprint that can reach about fourteen. Twenty-two clears
+ * both with enough margin that a jittered neighbour cannot reach in.
+ */
+const LANDMARK_CLEARANCE = 22;
+
 /** Vertical distance between level floors. Descending decreases Y. */
 const LEVEL_DROP = 155;
 
@@ -408,6 +418,8 @@ function placements(
   camera: readonly [number, number],
   look: number,
   voidScale: number,
+  /** Where this level's landmarks stand, so nothing is placed through one. */
+  landmarks: readonly (readonly [number, number])[],
 ): { cells: Cell[]; step: number } {
   const half = span / 2;
   // Enough cells that rejecting the void still leaves room to choose from.
@@ -429,6 +441,18 @@ function placements(
       // And the room the camera stands in once it arrives — open ahead,
       // close at the flanks, which is what a street is.
       if (!clearsCamera(x, z, camera, look, voidScale)) continue;
+      /*
+       * And the ground each landmark stands on.
+       *
+       * Phase 9 put authored landmarks into a city that had never been told
+       * they existed, so a procedural tower could be — and was — generated
+       * through one. A radius check against a handful of known points is the
+       * whole fix: it is deterministic, it consumes no randomness, and it
+       * costs nine comparisons per candidate cell. A collision system would
+       * be a great deal more code for a problem with nine instances of it.
+       */
+      if (landmarks.some(([lx, lz]) => Math.hypot(x - lx, z - lz) < LANDMARK_CLEARANCE))
+        continue;
       cells.push({ x, z });
     }
   }
@@ -1737,6 +1761,15 @@ function generateLevel(
   // The camera looks across the shaft, so the clear cone points back through
   // the origin.
   const look = cameraBearing(index) + Math.PI;
+  // The landmarks for this level, resolved before anything procedural is
+  // placed — they are authored, so they have first claim on the ground.
+  const landmarks = ANCHOR_SPECS.filter(
+    (spec) => route(spec.routeId).level === level,
+  ).map((spec) => {
+    const [lx, , lz] = anchorPlacement(spec, floor, look);
+    return [lx, lz] as const;
+  });
+
   const { cells, step } = placements(
     rng,
     Math.floor(budget.structures * profile.structureShare),
@@ -1745,6 +1778,7 @@ function generateLevel(
     camera,
     look,
     profile.voidScale,
+    landmarks,
   );
 
   // A footprint may not exceed what its cell can hold, minus the street. The
