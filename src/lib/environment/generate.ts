@@ -2,6 +2,7 @@ import {
   CORPORATIONS,
   DISTRICTS,
   LEVEL_DISTRICTS,
+  SIGN_TIERS,
   type Corporation,
   type DistrictId,
 } from "@/data/city-identity";
@@ -82,6 +83,16 @@ const SPAN = 330;
  * whichever facade happens to be nearest.
  */
 const VOID_RADIUS = 46;
+
+/**
+ * How much ground a landmark keeps to itself, in metres.
+ *
+ * Sized against the landmarks rather than picked: the widest of them is the
+ * contract hub at sixteen metres across, and a structure cell is placed at its
+ * centre with a footprint that can reach about fourteen. Twenty-two clears
+ * both with enough margin that a jittered neighbour cannot reach in.
+ */
+const LANDMARK_CLEARANCE = 22;
 
 /** Vertical distance between level floors. Descending decreases Y. */
 const LEVEL_DROP = 155;
@@ -408,6 +419,8 @@ function placements(
   camera: readonly [number, number],
   look: number,
   voidScale: number,
+  /** Where this level's landmarks stand, so nothing is placed through one. */
+  landmarks: readonly (readonly [number, number])[],
 ): { cells: Cell[]; step: number } {
   const half = span / 2;
   // Enough cells that rejecting the void still leaves room to choose from.
@@ -429,6 +442,18 @@ function placements(
       // And the room the camera stands in once it arrives — open ahead,
       // close at the flanks, which is what a street is.
       if (!clearsCamera(x, z, camera, look, voidScale)) continue;
+      /*
+       * And the ground each landmark stands on.
+       *
+       * Phase 9 put authored landmarks into a city that had never been told
+       * they existed, so a procedural tower could be — and was — generated
+       * through one. A radius check against a handful of known points is the
+       * whole fix: it is deterministic, it consumes no randomness, and it
+       * costs nine comparisons per candidate cell. A collision system would
+       * be a great deal more code for a problem with nine instances of it.
+       */
+      if (landmarks.some(([lx, lz]) => Math.hypot(x - lx, z - lz) < LANDMARK_CLEARANCE))
+        continue;
       cells.push({ x, z });
     }
   }
@@ -1737,6 +1762,15 @@ function generateLevel(
   // The camera looks across the shaft, so the clear cone points back through
   // the origin.
   const look = cameraBearing(index) + Math.PI;
+  // The landmarks for this level, resolved before anything procedural is
+  // placed — they are authored, so they have first claim on the ground.
+  const landmarks = ANCHOR_SPECS.filter(
+    (spec) => route(spec.routeId).level === level,
+  ).map((spec) => {
+    const [lx, , lz] = anchorPlacement(spec, floor, look);
+    return [lx, lz] as const;
+  });
+
   const { cells, step } = placements(
     rng,
     Math.floor(budget.structures * profile.structureShare),
@@ -1745,6 +1779,7 @@ function generateLevel(
     camera,
     look,
     profile.voidScale,
+    landmarks,
   );
 
   // A footprint may not exceed what its cell can hold, minus the street. The
@@ -1854,6 +1889,10 @@ function generateLevel(
   // skyline can make that the city is operating rather than modelled.
   beaconLights(rng, structures, lights);
 
+  // Last, because it consumes no randomness and must not disturb anything
+  // that does — the lighting quota above is arithmetic over these structures.
+  signUnmarkedOwners(structures);
+
   return {
     level,
     index: levelIndex(level),
@@ -1915,6 +1954,69 @@ function thinLights(items: readonly LightCell[], keep: number): LightCell[] {
 /** This level's hard ceiling on lit cells. */
 function lightQuota(tier: QualityTier, level: StratumId): number {
   return Math.floor(environmentBudget(tier).maxLights * PROFILE[level].lightShare);
+}
+
+/**
+ * A corporation that holds property here signs one of its buildings.
+ *
+ * Marks are rolled per building against `presence`, and that is the right
+ * grammar: a landlord's name on every door it owns is propaganda, not a city.
+ * But both mark tiers are gated on the host's height, and a corporation whose
+ * entire portfolio is plant owns nothing tall. Corrigan Power & Cooling held
+ * eleven structures at HIGH and carried its name on none of them, so the one
+ * identity in the set that runs on a hazard circuit never appeared anywhere
+ * in the world — the data said five institutions and the frame showed four.
+ *
+ * The floor, rather than a looser gate: a corporation with holdings on a
+ * level signs exactly one of them, the tallest, and only when the per-building
+ * rolls left it with none. It draws no randomness, so every other building in
+ * the city is byte-identical either way; it adds at most one mark per owner
+ * per level, so the result stays as sparse as the rolls intended; and it uses
+ * the same mark at the same tier the host's height qualifies for, so nothing
+ * about the grammar changes except that the set is now complete.
+ */
+function signUnmarkedOwners(structures: Structure[]): void {
+  const held = new Map<string, Structure[]>();
+  for (const s of structures) {
+    if (s.owner === undefined) continue;
+    held.set(s.owner, [...(held.get(s.owner) ?? []), s]);
+  }
+
+  for (const corp of CORPORATIONS) {
+    const mine = held.get(corp.id);
+    if (mine === undefined || mine.length === 0) continue;
+    // `source` reaches a structure's parts from `corporateMark` and from
+    // nowhere else, which is what makes this a test for "already signed"
+    // rather than for "has something lit on it".
+    if (mine.some((s) => s.parts.some((p) => p.source !== undefined && p.emissive > 0))) {
+      continue;
+    }
+
+    // The tallest holding: the one a name would be read off from the street.
+    const host = mine.reduce((a, b) => (b.size[1] > a.size[1] ? b : a));
+    const [x, base, z] = host.position;
+    const [w, h, d] = host.size;
+    const skyline = h >= SIGN_TIERS.skyline.minHost;
+    const spec = skyline ? SIGN_TIERS.skyline : SIGN_TIERS.district;
+    const parts: Part[] = [];
+    corporateMark(
+      corp,
+      x + Math.sin(host.rotation) * (d / 2 + 0.7),
+      // Mid-shaft on a short host, near the crown on a tall one: the same
+      // placement the rolled marks use at each tier.
+      base + h * (skyline ? 0.8 : 0.58),
+      z - Math.cos(host.rotation) * (d / 2 + 0.7),
+      Math.min(w * (skyline ? 0.32 : 0.26), skyline ? 11 : 5),
+      host.rotation,
+      // The top of the tier's range. This is the only mark its owner has.
+      spec.emissive[1],
+      parts,
+    );
+    structures[structures.indexOf(host)] = {
+      ...host,
+      parts: [...host.parts, ...parts],
+    };
+  }
 }
 
 /**

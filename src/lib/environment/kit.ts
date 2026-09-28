@@ -718,7 +718,11 @@ export function corporateMark(
         ],
         size,
         rotation,
-        { tilt, signal: s, emissive, wear: 0.2 },
+        // The mark is lit by the corporation's own fixture, not by the
+        // signal family. Five institutions that differ only in the shape of
+        // their logo are five colour-coded markers; five that light their
+        // buildings differently are five institutions.
+        { tilt, signal: s, source: corp.light, emissive, wear: 0.2 },
       ),
     );
   };
@@ -740,10 +744,15 @@ export function corporateMark(
       break;
     }
     case "ring":
-      // Power and cooling: a closed loop.
+      // Power and cooling: a closed loop. Pushed directly rather than through
+      // `push` because a ring is centred on the mount rather than offset from
+      // it — which is exactly why it has to repeat `source` by hand. It did
+      // not, and the one corporation in the set that runs on a hazard circuit
+      // was the one whose mark never carried its own light.
       out.push(
         part("ring", [cx, cy, cz], [scale, scale, depth], rotation, {
           signal: s,
+          source: corp.light,
           emissive,
           wear: 0.2,
         }),
@@ -1087,6 +1096,113 @@ const CLUSTERS_BY_DISTRICT: Record<DistrictId, readonly ClusterKind[]> = {
 };
 
 /**
+ * Cut the corners off a volume.
+ *
+ * The single cheapest change to the thing that most reliably says "generated":
+ * every mass in this city is an axis-aligned rectangular prism, and a skyline
+ * of them reads as boxes however well they are lit, stacked or textured. Real
+ * buildings of this size almost never present a bare 90° arris at height —
+ * they are chamfered, filleted, or carry a corner column.
+ *
+ * Four thin plates set at 45° across each vertical arris. It is still boxes,
+ * and the silhouette stops being one: the outline gains eight edges instead of
+ * four, and the corner catches the key light at a different angle from either
+ * face, which is what actually sells it.
+ *
+ * Near and hero buildings only. At mid distance the chamfer is under a pixel
+ * and would be four instances buying nothing.
+ */
+function chamfer(
+  x: number,
+  y: number,
+  z: number,
+  h: number,
+  w: number,
+  d: number,
+  rotation: number,
+  wear: number,
+  variant: number,
+  parts: Part[],
+): void {
+  const cut = Math.min(w, d) * 0.16;
+  if (cut < 0.6) return;
+  const corners = [
+    [1, 1, Math.PI / 4],
+    [1, -1, -Math.PI / 4],
+    [-1, -1, Math.PI / 4],
+    [-1, 1, -Math.PI / 4],
+  ] as const;
+
+  for (const [sx, sz, turn] of corners) {
+    // Pulled in along the diagonal so the plate sits across the arris rather
+    // than hanging off it.
+    const lx = (sx * w) / 2 - sx * cut * 0.34;
+    const lz = (sz * d) / 2 - sz * cut * 0.34;
+    parts.push(
+      part(
+        "fin",
+        [
+          x + Math.cos(rotation) * lx - Math.sin(rotation) * lz,
+          y + h / 2,
+          z + Math.sin(rotation) * lx + Math.cos(rotation) * lz,
+        ],
+        [cut * 1.45, h, cut * 0.5],
+        rotation + turn,
+        { variant, wear, signal: "none" },
+      ),
+    );
+  }
+}
+
+/**
+ * A full-height recess down one face.
+ *
+ * The other half of the same problem: a facade with no depth in it reads as a
+ * printed surface. A single deep slot — a service riser, a stair core, the
+ * gap between two structural bays — gives the elevation one shadow that runs
+ * the whole height, and one is enough. Two would be a pattern.
+ */
+function recess(
+  rng: Rng,
+  x: number,
+  y: number,
+  z: number,
+  h: number,
+  w: number,
+  d: number,
+  rotation: number,
+  wear: number,
+  parts: Part[],
+): void {
+  const face = rng.int(0, 3);
+  const along = face % 2 === 0 ? w : d;
+  const slot = Math.min(along * 0.22, 4.5);
+  if (slot < 1) return;
+  const outward = (face % 2 === 0 ? d : w) / 2;
+  const sign = face < 2 ? 1 : -1;
+  const offset = rng.range(-along * 0.22, along * 0.22);
+  const lx = face % 2 === 0 ? offset : sign * outward;
+  const lz = face % 2 === 0 ? sign * outward : offset;
+
+  parts.push(
+    part(
+      "pipe",
+      [
+        x + Math.cos(rotation) * lx - Math.sin(rotation) * lz,
+        y + h / 2,
+        z + Math.sin(rotation) * lx + Math.cos(rotation) * lz,
+      ],
+      [slot, h * 0.94, slot * 0.7],
+      rotation,
+      // Heavily worn: a recess is where dirt collects and light does not
+      // reach, and the material response is most of what makes it read as a
+      // hole rather than as a stripe.
+      { wear: Math.min(1, wear + 0.3), signal: "none" },
+    ),
+  );
+}
+
+/**
  * Human-scale clutter at the base of a building, in clusters.
  *
  * None of it is individually interesting, and collectively it is most of what
@@ -1357,6 +1473,19 @@ export function composeBuilding(input: ComposeInput): Structure {
       }
       if (t === 0 && rng.chance(grammar.cantilever)) {
         cantilever(rng, x + jitterX, z + jitterZ, y, th, w, d, rotation, wear, parts);
+      }
+      /*
+       * Silhouette, at the distance where silhouette is readable.
+       *
+       * Applied to the lower tiers only. A chamfer on the top of a stack is
+       * four instances nobody can resolve against the sky, and the corner
+       * that matters is the one at eye level where the reader is standing.
+       */
+      if (t < 2 && rng.chance(0.72)) {
+        chamfer(x + jitterX, y, z + jitterZ, th, w, d, rotation, wear, variant, parts);
+      }
+      if (t === 0 && rng.chance(0.55)) {
+        recess(rng, x + jitterX, y, z + jitterZ, th, w, d, rotation, wear, parts);
       }
     } else if (detail === "mid") {
       // Mid buildings get silhouette only — the two moves that change an
