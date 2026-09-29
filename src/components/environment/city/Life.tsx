@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { CITY_GEOMETRY, TRANSIT } from "@/lib/environment/generate";
-import type { City } from "@/lib/environment/types";
-import type { Palette } from "./palette";
+import type { City, LightSource, Part } from "@/lib/environment/types";
+import { lightSourceColour, type Palette } from "./palette";
 
 /* ---------------------------------------------------------------------------
  * The things that make the city feel occupied.
@@ -256,9 +256,14 @@ const STEAM_VERTEX = /* glsl */ `
   attribute float aPhase;
   attribute float aSpeed;
   attribute float aScale;
+  attribute vec3 aTint;
   varying float vFade;
+  varying vec3 vTint;
+  varying vec2 vCorner;
 
   void main() {
+    vTint = aTint;
+    vCorner = aCorner;
     float t = fract(uTime * aSpeed + aPhase);
     vec3 centre = position;
     centre.y += t * 26.0;
@@ -275,10 +280,25 @@ const STEAM_VERTEX = /* glsl */ `
 `;
 
 const STEAM_FRAGMENT = /* glsl */ `
-  uniform vec3 uColor;
   varying float vFade;
+  varying vec3 vTint;
+  varying vec2 vCorner;
   void main() {
-    gl_FragColor = vec4(uColor, vFade * 0.11);
+    // A puff, not a card.
+    //
+    // This was a flat quad at a constant alpha, and it survived four
+    // phases because it was drawn in the fog colour: a hard-edged
+    // rectangle the same colour as the distance is a hard-edged
+    // rectangle nobody can see. The moment a plume took the colour of
+    // the lamp lighting it, every one of them read as a brown slab
+    // laid over the mid-ground.
+    //
+    // Two instructions and no new attribute of its own: the corner is
+    // already here, and its length is the distance from the middle of
+    // the puff.
+    float r = length(vCorner);
+    float soft = 1.0 - smoothstep(0.15, 1.0, r);
+    gl_FragColor = vec4(vTint, vFade * soft * 0.13);
   }
 `;
 
@@ -291,6 +311,26 @@ const STEAM_FRAGMENT = /* glsl */ `
  *
  * It is the cheapest "something is happening here" the city has: movement in
  * the foreground, at human scale, where the camera is already looking.
+ *
+ * WHAT COLOUR STEAM IS
+ *
+ * None of its own. It is water vapour in the dark, and every photograph of a
+ * plume that reads as atmospheric reads that way because it is showing you
+ * the colour of whatever is lighting it: orange under a sodium lamp, red
+ * beside a hazard beacon, warm white outside a lit frontage.
+ *
+ * This drew every plume in the fog colour, which is the one colour guaranteed
+ * to make it read as a decal — fog is what the *distance* looks like, not
+ * what the vent looks like. Each plume now takes the colour of the strongest
+ * lamp within thirty metres, weighted by brightness over distance, and keeps
+ * the fog colour where nothing is lighting it. Mixed three quarters of the
+ * way back toward the fog, because steam is a diffuser rather than a gel; the
+ * first pass kept more than half again as much of the lamp's colour, which
+ * with the hard-edged quads below turned the engine level into a warm haze
+ * across the whole mid-ground.
+ *
+ * One vertex attribute. No new draw call, and the street's lighting now
+ * reaches something other than the street.
  */
 export function Steam({
   city,
@@ -311,22 +351,64 @@ export function Steam({
   const { geometry, uniforms, count } = useMemo(() => {
     // Vent locations: the street furniture the generator already placed.
     const vents: [number, number][] = [];
+    /*
+     * And every lamp low enough to light one.
+     *
+     * Gathered once so the nearest-lamp search below runs over a few hundred
+     * candidates rather than six thousand parts, and filtered by height
+     * because a lit window forty storeys up does not light a pavement.
+     */
+    const lamps: { x: number; z: number; e: number; source: LightSource }[] = [];
+    const collect = (p: Part, floorY: number): void => {
+      if (p.emissive <= 0.5 || p.position[1] - floorY > 22) return;
+      lamps.push({
+        x: p.position[0],
+        z: p.position[2],
+        e: p.emissive,
+        source: p.source ?? (p.signal === "cold" ? "machine" : "interior"),
+      });
+    };
+
     for (const level of city.levels) {
       for (const s of level.structures) {
+        for (const p of s.parts) collect(p, level.floor);
         if (s.district === "corporate") continue;
         for (const p of s.parts) {
           if (p.kind !== "prop" || p.size[1] > 1) continue;
           vents.push([p.position[0], p.position[2]]);
         }
       }
+      for (const p of level.fixtures) collect(p, level.floor);
     }
     const chosen = vents.slice(0, plumes);
+
+    const fog = new THREE.Color(palette.fog);
+    const lit = new THREE.Color();
+    /** The colour this plume is being lit by, if anything is lighting it. */
+    const tintFor = (x: number, z: number): THREE.Color => {
+      let best: { source: LightSource } | null = null;
+      let bestScore = 0;
+      for (const l of lamps) {
+        const d2 = (l.x - x) ** 2 + (l.z - z) ** 2;
+        if (d2 > 900) continue;
+        // Brightness over distance. A dim lamp three metres away beats a
+        // bright one at twenty-five, which is how a plume gets its colour.
+        const score = l.e / (1 + d2 * 0.02);
+        if (score > bestScore) {
+          bestScore = score;
+          best = l;
+        }
+      }
+      if (best === null) return fog;
+      return lit.set(lightSourceColour(best.source, palette)).lerp(fog, 0.76);
+    };
 
     const position = new Float32Array(chosen.length * 4 * 3);
     const corner = new Float32Array(chosen.length * 4 * 2);
     const phase = new Float32Array(chosen.length * 4);
     const speed = new Float32Array(chosen.length * 4);
     const scale = new Float32Array(chosen.length * 4);
+    const tint = new Float32Array(chosen.length * 4 * 3);
     const index: number[] = [];
 
     chosen.forEach(([x, z], i) => {
@@ -339,6 +421,7 @@ export function Steam({
         [1, 1],
         [-1, 1],
       ];
+      const t = tintFor(x, z);
       for (let v = 0; v < 4; v += 1) {
         const k = i * 4 + v;
         position[k * 3] = x;
@@ -349,6 +432,9 @@ export function Steam({
         phase[k] = ph;
         speed[k] = sp;
         scale[k] = sc;
+        tint[k * 3] = t.r;
+        tint[k * 3 + 1] = t.g;
+        tint[k * 3 + 2] = t.b;
       }
       const base = i * 4;
       index.push(base, base + 1, base + 2, base, base + 2, base + 3);
@@ -360,6 +446,7 @@ export function Steam({
     g.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
     g.setAttribute("aSpeed", new THREE.BufferAttribute(speed, 1));
     g.setAttribute("aScale", new THREE.BufferAttribute(scale, 1));
+    g.setAttribute("aTint", new THREE.BufferAttribute(tint, 3));
     g.setIndex(index);
     g.boundingSphere = new THREE.Sphere(
       new THREE.Vector3(0, floor + 20, 0),
@@ -369,9 +456,9 @@ export function Steam({
     return {
       geometry: g,
       count: chosen.length,
-      uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(palette.fog) } },
+      uniforms: { uTime: { value: 0 } },
     };
-  }, [city, floor, plumes, palette.fog]);
+  }, [city, floor, plumes, palette]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 

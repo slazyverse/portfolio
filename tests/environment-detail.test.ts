@@ -277,13 +277,26 @@ describe("tiers differ by fidelity, not only by count", () => {
   });
 
   it("keeps generated texture memory inside a stated budget", () => {
-    // Four facade albedos, four emissive maps, a grime map and a road, plus
-    // mipmaps. The single largest GPU memory decision in the environment, and
-    // therefore a number worth knowing rather than discovering on a laptop.
+    // Four facade albedos, four emissive maps, a grime map, a road and the
+    // road's roughness map, plus mipmaps. The single largest GPU memory
+    // decision in the environment, and therefore a number worth knowing
+    // rather than discovering on a laptop.
+    //
+    // The ceilings below are unchanged by Phase 11. The roughness map is
+    // generated at half the road's edge length, which is a quarter of the
+    // pixels and about 0.35 MB at HIGH: roughness varies over metres rather
+    // than centimetres, so it is the map in the set least rewarded by
+    // resolution and the cheapest place to decline to spend it.
     const megabytes = (size: number) => {
       const per = (size * size * 4 * 1.33) / 1048576;
       const grime = Math.min(size, 512);
-      return per * 4 * 2 + (grime * grime * 4 * 1.33) / 1048576 + per;
+      const rough = Math.max(128, Math.round(size / 2));
+      return (
+        per * 4 * 2 +
+        (grime * grime * 4 * 1.33) / 1048576 +
+        per +
+        (rough * rough * 4 * 1.33) / 1048576
+      );
     };
     // Measured, not aspirational: about 13 MB at HIGH and 7.5 MB at BALANCED.
     // The ceilings exist to catch the case this test already caught once —
