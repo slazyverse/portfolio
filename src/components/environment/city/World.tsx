@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { StratumId } from "@/data/types";
 import { CITY_GEOMETRY } from "@/lib/environment/generate";
+import { ROAD_ROUGHNESS_SCALAR, isPaved } from "@/lib/environment/materials";
 import type { City, LevelEnvironment, LightCell } from "@/lib/environment/types";
 import type { CityTextures } from "./textures";
 import { lightSourceColour, type Palette } from "./palette";
@@ -52,7 +53,7 @@ function Street({
    * dashed white centre line through a plant hall reads as a highway for the
    * same reason. A plant floor is a dark matte slab that has been worked on.
    */
-  const paved = level.level === "surface";
+  const paved = isPaved(level.level);
   const repeat = size / (paved ? 46 : 18);
 
   const map = useMemo(() => {
@@ -64,7 +65,27 @@ function Street({
     return t;
   }, [textures.road, textures.grime, paved, repeat]);
 
+  /*
+   * How rough each square metre of it is.
+   *
+   * Only the paved level. The engine and substrate floors are a worked
+   * concrete slab, and a slab is uniformly rough — giving it a map would be
+   * spending memory to say nothing. Cloned and repeated in lockstep with the
+   * albedo, because a puddle that is dark in one map and somewhere else in
+   * the other is worse than no puddle at all.
+   */
+  const roughMap = useMemo(() => {
+    if (!paved) return null;
+    const t = textures.roadRough.clone();
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeat, repeat);
+    t.needsUpdate = true;
+    return t;
+  }, [textures.roadRough, paved, repeat]);
+
   useEffect(() => () => map.dispose(), [map]);
+  useEffect(() => () => roughMap?.dispose(), [roughMap]);
 
   return (
     <mesh
@@ -90,13 +111,24 @@ function Street({
          * At 0.34 roughness and 0.55 metalness the road was a near-mirror,
          * and a near-mirror under a low directional light produces one
          * enormous specular lobe — which is exactly what the right-hand third
-         * of this shot was: not a bug in the light pooling, but the key
-         * light's own reflection, blown to white across twenty percent of the
-         * frame. Broadening the lobe spreads the same energy over more of the
-         * road, which is what a real wet surface does and what makes it read
-         * as wet rather than as chrome.
+         * of this shot was: the key light's own reflection, blown to white
+         * across twenty percent of the frame.
+         *
+         * 0.52 was the value that fixed it, and it is still the value this
+         * has to average. What changed is that it is now an average rather
+         * than a constant: this scalar multiplies a map that runs from 0.69
+         * in standing water to 0.94 on a sealed joint, so the effective
+         * roughness varies between about 0.43 and 0.58. A uniformly wet road
+         * is a road nobody has thought about, and that variation is most of
+         * what separates a wet surface from a merely dark one.
+         *
+         * The floor is not a matter of taste. `materials.ts` names it, a
+         * test asserts it, and the first draft of the map reached an
+         * effective 0.35 and put twenty-three times as many blown-out pixels
+         * on the road.
          */
-        roughness={paved ? 0.52 : 0.9}
+        roughnessMap={roughMap}
+        roughness={paved ? ROAD_ROUGHNESS_SCALAR : 0.9}
         metalness={paved ? 0.34 : 0.1}
       />
     </mesh>

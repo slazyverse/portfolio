@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { ROAD_ROUGHNESS as RR } from "@/lib/environment/materials";
 import { createRng, type Rng } from "@/lib/environment/seed";
 
 /* ---------------------------------------------------------------------------
@@ -68,8 +69,17 @@ export interface CityTextures {
   facadeEmissives: THREE.CanvasTexture[];
   /** Roughness variation: grime, streaking, wear. Shared across surfaces. */
   grime: THREE.CanvasTexture;
-  /** Wet asphalt with lane markings and worn paint. */
+  /** Wet asphalt with lane markings, worn paint, seams, covers and patches. */
   road: THREE.CanvasTexture;
+  /**
+   * How rough each square metre of that road is.
+   *
+   * In register with `road`, and the reason the street reads as wet in
+   * places rather than wet everywhere: a puddle is smooth, a sealed joint is
+   * coarse, and a wheel track is polished. Half resolution, because
+   * roughness varies over metres.
+   */
+  roadRough: THREE.CanvasTexture;
   dispose(): void;
 }
 
@@ -413,33 +423,231 @@ function buildGrime(size: number, seed: string): THREE.CanvasTexture {
 }
 
 /**
- * Wet asphalt.
+ * Wet asphalt, and how rough it is.
  *
- * Markings are painted first and then worn, rather than drawn already faded:
- * the wear pass eats into them unevenly, which is what real paint does and
- * what a uniform low opacity never looks like.
+ * Two maps out of one pass, because the interesting thing about a wet road is
+ * not its colour — it is that the wetness is not uniform. A puddle is darker
+ * than the asphalt around it *and* smoother. A patch of new blacktop is
+ * darker and rougher. The two strips a car's wheels polish down a lane are
+ * lighter and smoother than the lane they run along. Painted into an albedo
+ * alone all three are a picture of a road; painted into a roughness map as
+ * well they are a road, because the specular response is what the eye
+ * actually reads as wet.
+ *
+ * Drawn together rather than in two passes so the two agree. A puddle that is
+ * dark in one map and rough in the other is worse than no puddle at all.
+ *
+ * Everything added here is incident rather than pattern: seams where two
+ * paving runs met, a trench cut for a service and sealed back, covers, a
+ * gully and the fan of road that drains into it, cracks. That is what was
+ * missing. The surface had markings and grime and no history, and a road with
+ * no history reads as a texture rather than as somewhere vehicles have been
+ * driving for thirty years.
  */
-function buildRoad(size: number, seed: string): THREE.CanvasTexture {
+function buildRoad(
+  size: number,
+  seed: string,
+): { albedo: THREE.CanvasTexture; roughness: THREE.CanvasTexture } {
   const [element, ctx] = canvas(size);
+  // Half resolution. Roughness varies over metres rather than centimetres,
+  // so this is the map in the set least rewarded by pixels, and the cheapest
+  // place to decline to spend them.
+  const roughSize = Math.max(128, Math.round(size / 2));
+  const [roughElement, rgh] = canvas(roughSize);
   const rng = createRng(`${seed}:road`);
 
-  // Wet asphalt is dark but it is not black: around 0.12 reflectance dry,
-  // and it is the reflection that makes it read as wet, not the albedo.
+  /*
+   * One feature, both maps, each at its own resolution.
+   *
+   * The callback works in normalised coordinates multiplied by whatever size
+   * it is handed, which is what keeps a seam in the albedo and the same seam
+   * in the roughness map on top of each other.
+   */
+  const paint = (
+    albedo: string | null,
+    rough: string | null,
+    draw: (c: CanvasRenderingContext2D, s: number) => void,
+  ): void => {
+    if (albedo !== null) {
+      ctx.save();
+      ctx.fillStyle = albedo;
+      ctx.strokeStyle = albedo;
+      draw(ctx, size);
+      ctx.restore();
+    }
+    if (rough !== null) {
+      rgh.save();
+      rgh.fillStyle = rough;
+      rgh.strokeStyle = rough;
+      draw(rgh, roughSize);
+      rgh.restore();
+    }
+  };
+
+  // --- base ---------------------------------------------------------------
+  // Wet asphalt is dark but it is not black: around 0.12 reflectance dry, and
+  // it is the reflection that makes it read as wet, not the albedo.
+  //
+  // 0.85 here against the material's 0.62 multiplier lands on the 0.53 the
+  // previous pass arrived at by hand, which is the number this has to keep.
+  // Below about 0.34 the key light's own lobe blows out a fifth of the frame,
+  // and that was a real bug once, so every value in this function stays clear
+  // of it: the map runs from 0.69 in standing water to 0.94 on a sealed
+  // joint, an effective 0.43 to 0.58. Measured rather than assumed — the
+  // first draft reached 0.56 and put twenty-three times as many blown pixels
+  // on the road.
   ctx.fillStyle = "#2b3038";
   ctx.fillRect(0, 0, size, size);
+  rgh.fillStyle = RR.asphalt;
+  rgh.fillRect(0, 0, roughSize, roughSize);
+
   blobNoise(ctx, rng, size, 42, [size * 0.02, size * 0.1], 0.24, "#3c434e");
   blobNoise(ctx, rng, size, 24, [size * 0.03, size * 0.13], 0.2, "#1a1e25");
+  // Damp and dry in broad areas, independent of the albedo's grime: a road
+  // dries in patches, from the crown of the camber outward.
+  blobNoise(rgh, rng, roughSize, 16, [roughSize * 0.08, roughSize * 0.3], 0.3, RR.damp);
+  blobNoise(rgh, rng, roughSize, 12, [roughSize * 0.06, roughSize * 0.24], 0.25, RR.dry);
 
-  // Lane markings down the centre of the tile.
-  ctx.fillStyle = "rgba(214, 206, 176, 0.72)";
-  const laneW = size * 0.012;
-  for (let y = 0; y < size; y += size * 0.16) {
-    ctx.fillRect(size * 0.5 - laneW / 2, y, laneW, size * 0.09);
+  // --- wheel tracks -------------------------------------------------------
+  /*
+   * Where the tyres go.
+   *
+   * Two lanes, two wheels each. Years of traffic polish those four strips
+   * smoother than the asphalt beside them and lift them slightly in albedo as
+   * the binder wears off the aggregate. On a wet night they are the brightest
+   * thing on the road, because a smoother surface returns more of the light
+   * it is given in one direction.
+   *
+   * This is the single addition that does most for physical scale: it states
+   * how wide a vehicle is without drawing one.
+   */
+  for (const u of [0.19, 0.39, 0.61, 0.81]) {
+    paint("rgba(255,255,255,0.055)", RR.wheelTrack, (c, s) => {
+      const w = s * 0.024;
+      const g = c.createLinearGradient(u * s - w, 0, u * s + w, 0);
+      g.addColorStop(0, "transparent");
+      g.addColorStop(0.5, c.fillStyle as string);
+      g.addColorStop(1, "transparent");
+      c.fillStyle = g;
+      c.fillRect(u * s - w, 0, w * 2, s);
+    });
   }
-  // Kerb-side continuous line.
-  ctx.fillStyle = "rgba(214, 206, 176, 0.42)";
-  ctx.fillRect(size * 0.08, 0, laneW * 0.8, size);
-  ctx.fillRect(size * 0.92, 0, laneW * 0.8, size);
+
+  // --- construction joints ------------------------------------------------
+  // A road is laid in runs and the runs meet: longitudinal between paving
+  // lanes, transverse where one day's work stopped. Sealant is coarser than
+  // the asphalt it joins, so these go *up* in roughness while going down in
+  // albedo, and that pair of moves is what reads as a filled joint rather
+  // than as a drawn line.
+  for (const u of [0.29, 0.71]) {
+    paint("rgba(0,0,0,0.38)", RR.joint, (c, s) => c.fillRect(u * s, 0, s * 0.005, s));
+  }
+  for (const v of [0.23, 0.69]) {
+    paint("rgba(0,0,0,0.32)", RR.joint, (c, s) => c.fillRect(0, v * s, s, s * 0.004));
+    // One side of a transverse seam sits a few millimetres proud and catches
+    // light along its whole length.
+    paint("rgba(255,255,255,0.06)", null, (c, s) =>
+      c.fillRect(0, v * s - s * 0.004, s, s * 0.004),
+    );
+  }
+
+  // --- patched asphalt ----------------------------------------------------
+  // A trench cut for a service and filled back in. Newer, darker, coarser,
+  // and outlined by the sealant run round the cut.
+  for (let i = 0; i < 2; i += 1) {
+    const px = rng.range(0.12, 0.62);
+    const pv = rng.range(0.08, 0.7);
+    const pw = rng.range(0.14, 0.3);
+    const ph = rng.range(0.06, 0.16);
+    paint("#252b34", RR.patch, (c, s) => c.fillRect(px * s, pv * s, pw * s, ph * s));
+    paint("rgba(0,0,0,0.45)", null, (c, s) => {
+      c.lineWidth = Math.max(1, s * 0.004);
+      c.strokeRect(px * s, pv * s, pw * s, ph * s);
+    });
+  }
+
+  // --- service covers -----------------------------------------------------
+  // Cast iron, about a metre across, set flush and never quite level. Off the
+  // wheel tracks, which is where they are in a real road because that is
+  // where the services run.
+  const covers: readonly (readonly [number, number])[] = [
+    [0.5, rng.range(0.1, 0.45)],
+    [0.29, rng.range(0.55, 0.92)],
+  ];
+  for (const [cu, cv] of covers) {
+    const r = 0.013;
+    paint("#20252d", RR.cover, (c, s) => {
+      c.beginPath();
+      c.arc(cu * s, cv * s, r * s, 0, Math.PI * 2);
+      c.fill();
+    });
+    paint("rgba(255,255,255,0.13)", null, (c, s) => {
+      c.lineWidth = Math.max(1, s * 0.003);
+      c.beginPath();
+      c.arc(cu * s, cv * s, r * s, 0, Math.PI * 2);
+      c.stroke();
+    });
+  }
+
+  // --- drainage -----------------------------------------------------------
+  // A gully at the kerb, and the damp fan of road that drains into it. The
+  // fan is the part that matters: water on a road goes somewhere, and a
+  // surface that is uniformly wet is a surface nobody has thought about.
+  for (const gu of [0.095, 0.905]) {
+    const gv = rng.range(0.15, 0.75);
+    paint(null, RR.dampFan, (c, s) => {
+      const g = c.createRadialGradient(gu * s, gv * s, 0, gu * s, gv * s, s * 0.11);
+      g.addColorStop(0, RR.dampFan);
+      g.addColorStop(1, "transparent");
+      c.fillStyle = g;
+      c.fillRect(gu * s - s * 0.11, gv * s - s * 0.11, s * 0.22, s * 0.22);
+    });
+    paint("rgba(0,0,0,0.5)", null, (c, s) => {
+      const g = c.createRadialGradient(gu * s, gv * s, 0, gu * s, gv * s, s * 0.09);
+      g.addColorStop(0, "rgba(0,0,0,0.45)");
+      g.addColorStop(1, "transparent");
+      c.fillStyle = g;
+      c.fillRect(gu * s - s * 0.09, gv * s - s * 0.09, s * 0.18, s * 0.18);
+    });
+    // The grating itself.
+    paint("#12161c", RR.grating, (c, s) =>
+      c.fillRect(gu * s, gv * s, s * 0.024, s * 0.009),
+    );
+  }
+
+  // --- cracks -------------------------------------------------------------
+  // Thin, and going somewhere. A straight crack reads as a scratch.
+  for (let i = 0; i < 5; i += 1) {
+    const sx = rng.range(0, 1);
+    const sy = rng.range(0, 1);
+    const dir = rng.range(-0.5, 0.5);
+    const len = rng.range(0.08, 0.26);
+    paint("rgba(0,0,0,0.34)", RR.crack, (c, s) => {
+      c.lineWidth = Math.max(1, s * 0.0022);
+      c.beginPath();
+      c.moveTo(sx * s, sy * s);
+      for (let k = 1; k <= 5; k += 1) {
+        const t = k / 5;
+        c.lineTo((sx + dir * len * t) * s, (sy + len * t) * s);
+      }
+      c.stroke();
+    });
+  }
+
+  // --- markings -----------------------------------------------------------
+  // Painted first and then worn, rather than drawn already faded: the wear
+  // pass eats into them unevenly, which is what real paint does and what a
+  // uniform low opacity never looks like. Thermoplastic is smoother than the
+  // asphalt it sits on, so it belongs in the roughness map too.
+  paint("rgba(214, 206, 176, 0.72)", RR.laneMarking, (c, s) => {
+    const w = s * 0.012;
+    for (let y = 0; y < s; y += s * 0.16) c.fillRect(s * 0.5 - w / 2, y, w, s * 0.09);
+  });
+  paint("rgba(214, 206, 176, 0.42)", RR.kerbMarking, (c, s) => {
+    const w = s * 0.012 * 0.8;
+    c.fillRect(s * 0.08, 0, w, s);
+    c.fillRect(s * 0.92, 0, w, s);
+  });
 
   // Hazard hatching near the edge: infrastructure, not decoration.
   ctx.save();
@@ -456,15 +664,57 @@ function buildRoad(size: number, seed: string): THREE.CanvasTexture {
 
   // Wear over the paint.
   blobNoise(ctx, rng, size, 28, [size * 0.025, size * 0.11], 0.28, "#232830");
-  // Standing water: darker and smoother than the asphalt around it.
-  blobNoise(ctx, rng, size, 14, [size * 0.06, size * 0.24], 0.42, "#141922");
 
-  const t = new THREE.CanvasTexture(element);
-  t.wrapS = THREE.RepeatWrapping;
-  t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  // --- standing water -----------------------------------------------------
+  /*
+   * The one thing that has to be in both maps at the same coordinates.
+   *
+   * `blobNoise` draws its own positions from the stream, which is right for
+   * grime and useless here: a puddle is a puddle because the dark patch and
+   * the smooth patch are the same patch. So these positions are drawn once
+   * and painted twice — darker in albedo, and smoother in roughness.
+   *
+   * 0.69 rather than the 0.56 this was first written with. Against the
+   * material's 0.62 that is an effective 0.43, and the difference is not
+   * academic: measured over the road half of the surface shot, 0.56 took
+   * blown-out pixels from 0.018 percent of the frame to 0.416 — a
+   * twenty-three-fold increase and the beginning of the same specular
+   * blow-out the roughness value above exists to avoid. A puddle that is
+   * smoother than its surroundings is the whole point; a puddle that is a
+   * mirror is the bug.
+   */
+  for (let i = 0; i < 14; i += 1) {
+    const pu = rng.range(0, 1);
+    const pv = rng.range(0, 1);
+    const pr = rng.range(0.06, 0.24);
+    const a = rng.range(0.4, 1);
+    paint("#141922", RR.water, (c, s) => {
+      const g = c.createRadialGradient(pu * s, pv * s, 0, pu * s, pv * s, pr * s);
+      g.addColorStop(0, c.fillStyle as string);
+      g.addColorStop(1, "transparent");
+      c.globalAlpha = a * 0.42;
+      c.fillStyle = g;
+      c.beginPath();
+      c.arc(pu * s, pv * s, pr * s, 0, Math.PI * 2);
+      c.fill();
+    });
+  }
+
+  const albedo = new THREE.CanvasTexture(element);
+  albedo.wrapS = THREE.RepeatWrapping;
+  albedo.wrapT = THREE.RepeatWrapping;
+  albedo.anisotropy = 8;
+  albedo.colorSpace = THREE.SRGBColorSpace;
+
+  const roughness = new THREE.CanvasTexture(roughElement);
+  roughness.wrapS = THREE.RepeatWrapping;
+  roughness.wrapT = THREE.RepeatWrapping;
+  roughness.anisotropy = 4;
+  // Data, not colour. A roughness map read as sRGB is a roughness map with a
+  // gamma curve applied to it, which is a different material.
+  roughness.colorSpace = THREE.NoColorSpace;
+
+  return { albedo, roughness };
 }
 
 /**
@@ -508,15 +758,16 @@ function buildCityTextures(size: number, seed: string): CityTextures {
   }
 
   const grime = buildGrime(Math.min(size, 512), seed);
-  const road = buildRoad(size, seed);
+  const { albedo: road, roughness: roadRough } = buildRoad(size, seed);
 
   return {
     facades,
     facadeEmissives,
     grime,
     road,
+    roadRough,
     dispose() {
-      for (const t of [...facades, ...facadeEmissives, grime, road]) t.dispose();
+      for (const t of [...facades, ...facadeEmissives, grime, road, roadRough]) t.dispose();
     },
   };
 }

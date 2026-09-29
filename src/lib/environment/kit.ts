@@ -1617,49 +1617,95 @@ export function anchorParts(
   };
 
   switch (kind) {
-    // A needle with a collar. The tallest thin thing in the world, and the
-    // one silhouette that reads at any distance.
+    /*
+     * A needle with a collar, standing on its own legs.
+     *
+     * The tallest thin thing in the world and the one silhouette that reads
+     * at any distance — which is why this is the landmark the height went to.
+     * Thirty-four metres of mast on three splayed legs, with two collars
+     * rather than one: a single collar is a lollipop, and two make it read as
+     * a structure that was engineered rather than extruded.
+     */
     case "communication-tower":
-      at("mast", 0, 9, 0, [0.9, 26, 0.9]);
-      at("platform", 0, 4, 0, [7, 0.5, 7]);
-      at("ring", 0, 17, 0, [3.4, 3.4, 0.5], { signal: "cold", source: "machine", emissive: 0.7 });
-      at("sign", 0, 22.5, 0, [1.1, 1.1, 1.1], { signal: "cold", source: "warning", emissive: 0.9 });
+      at("mast", 0, 13, 0, [1.1, 34, 1.1]);
+      at("platform", 0, 5, 0, [8.5, 0.6, 8.5]);
+      at("platform", 0, 17, 0, [5, 0.5, 5]);
+      for (let i = 0; i < 3; i += 1) {
+        const a = (i / 3) * Math.PI * 2;
+        at("fin", Math.cos(a) * 3.1, 5, Math.sin(a) * 3.1, [0.7, 11, 0.7]);
+      }
+      at("ring", 0, 23, 0, [3.6, 3.6, 0.5], { signal: "cold", source: "machine", emissive: 0.8 });
+      at("sign", 0, 29.5, 0, [1.2, 1.2, 1.2], { signal: "cold", source: "warning", emissive: 1 });
       break;
 
-    // A wide low deck under a tall flat face: somewhere you arrive at and
-    // read something.
+    /*
+     * A wide low deck under a tall flat face: somewhere you arrive at and
+     * read something.
+     *
+     * The roofline is the addition. Two piers with a lintel across them is a
+     * gateway, and a gateway is legible from further away than two piers are
+     * — it closes the silhouette instead of leaving it as a pair of sticks.
+     */
     case "terminal":
-      at("platform", 0, 0, 0, [16, 1.2, 9]);
-      at("mass", -5, 5, 0, [1.4, 9, 6]);
-      at("mass", 5, 5, 0, [1.4, 9, 6]);
-      at("sign", 0, 7.5, 0, [11, 5, 0.5], { signal: "amber", source: "interior", emissive: 0.75 });
-      at("fin", 0, 2, -4.4, [12, 3.5, 0.6]);
+      at("platform", 0, 0, 0, [18, 1.4, 10]);
+      at("mass", -6, 7, 0, [1.7, 13, 6.5]);
+      at("mass", 6, 7, 0, [1.7, 13, 6.5]);
+      at("mass", 0, 14, 0, [14.5, 2.2, 7.4]);
+      at("roofUnit", 0, 16, 0, [6, 1.8, 4]);
+      at("sign", 0, 8, 0, [12, 5.5, 0.5], { signal: "amber", source: "interior", emissive: 0.85 });
+      at("fin", 0, 2.6, -5, [13, 4, 0.7]);
       break;
 
-    // A cluster, not a tower. Several equal things wired together, which is
-    // what a network looks like when you draw it as a building.
+    /*
+     * A cluster, not a tower. Several equal things wired together, which is
+     * what a network looks like when you draw it as a building.
+     *
+     * On a plinth now, with a mast up the middle. Four two-storey drums at
+     * street level were legible from ten metres and invisible from eighty;
+     * the plinth lifts the whole assembly clear of the street furniture and
+     * the mast gives it something to be seen against the sky by.
+     */
     case "network-node":
+      at("platform", 0, 0, 0, [13, 2, 13]);
       for (let i = 0; i < 4; i += 1) {
         const a = (i / 4) * Math.PI * 2;
-        at("tank", Math.cos(a) * 4.2, 3, Math.sin(a) * 4.2, [2.6, 6, 2.6]);
-        at("pipe", Math.cos(a) * 2.1, 5.6, Math.sin(a) * 2.1, [0.4, 0.4, 4.6], { tilt: 0.5 });
+        at("tank", Math.cos(a) * 4.4, 5, Math.sin(a) * 4.4, [2.8, 7, 2.8]);
+        at("pipe", Math.cos(a) * 2.2, 8, Math.sin(a) * 2.2, [0.4, 0.4, 4.8], { tilt: 0.5 });
       }
-      at("platform", 0, 0, 0, [12, 0.8, 12]);
+      at("mast", 0, 12, 0, [0.6, 11, 0.6]);
+      // Service indicators at the head of the mast. This was the only
+      // landmark in the world with nothing lit on it, which in a city this
+      // dark means it could be picked out by silhouette and by nothing else
+      // — and it is a low cluster, so it barely has one. Green, because that
+      // is what a rack of equipment that is working looks like.
+      at("sign", 0, 17.4, 0, [1.6, 0.5, 1.6], {
+        signal: "cold",
+        source: "utility",
+        emissive: 0.85,
+      });
       break;
 
-    // A stack of filed things. Horizontal layers, deliberately: a record is
-    // something added to, and the shape says so.
+    /*
+     * A stack of filed things. Horizontal layers, deliberately: a record is
+     * something added to, and the shape says so.
+     *
+     * A mast on the crown, because this is the landmark for the work itself
+     * and it sits among the tallest buildings in the city — layers alone were
+     * being read as another setback on another tower.
+     */
     case "contract-hub":
-      at("mass", 0, 6, 0, [14, 12, 10]);
-      for (let i = 0; i < 4; i += 1) {
-        at("platform", 0, 2.5 + i * 3, 0, [16.5, 0.7, 12], { wear: 0.4 });
+      at("mass", 0, 7, 0, [15, 14, 11]);
+      for (let i = 0; i < 5; i += 1) {
+        at("platform", 0, 2.5 + i * 3, 0, [17.5, 0.7, 13], { wear: 0.4 });
       }
-      at("fin", -7.2, 6, 0, [0.7, 13, 9]);
-      at("fin", 7.2, 6, 0, [0.7, 13, 9]);
-      at("sign", 0, 12.8, 5.2, [6, 1, 0.4], { signal: "amber", source: "interior", emissive: 0.6 });
+      at("fin", -7.8, 7, 0, [0.8, 15, 10]);
+      at("fin", 7.8, 7, 0, [0.8, 15, 10]);
+      at("mast", 0, 19, 0, [0.7, 10, 0.7]);
+      at("sign", 0, 14.6, 5.6, [7, 1.2, 0.4], { signal: "amber", source: "interior", emissive: 0.75 });
       break;
 
-    // Bedrock machinery: a heavy drum with services going into it.
+    // Bedrock machinery: a heavy drum with services going into it, and one
+    // stack tall enough to find it by.
     case "infrastructure-core":
       at("tank", 0, 4, 0, [9, 8, 9]);
       at("platform", 0, 8.4, 0, [12, 0.8, 12]);
@@ -1667,33 +1713,45 @@ export function anchorParts(
         const a = (i / 6) * Math.PI * 2;
         at("pipe", Math.cos(a) * 6, 2.2, Math.sin(a) * 6, [0.5, 4.4, 0.5]);
       }
-      at("ring", 0, 9.6, 0, [5, 5, 0.6], { signal: "cold", source: "machine", emissive: 0.55 });
+      at("pipe", 0, 15, 0, [1.7, 12, 1.7]);
+      at("ring", 0, 9.6, 0, [5, 5, 0.6], { signal: "cold", source: "machine", emissive: 0.7 });
       break;
 
-    // Low, long, closed. Storage rather than presence.
+    /*
+     * Low, long, closed. Storage rather than presence.
+     *
+     * It stays low — that is what it is — so the readability comes from a
+     * mast and a lit band along the frontage rather than from height. A
+     * landmark that is meant to be modest still has to be findable.
+     */
     case "archive":
-      at("mass", 0, 2.6, 0, [13, 5, 7]);
+      at("mass", 0, 3, 0, [14, 6, 8]);
       for (let i = 0; i < 5; i += 1) {
-        at("fin", -5.2 + i * 2.6, 2.6, 3.6, [0.5, 5, 0.5]);
+        at("fin", -5.6 + i * 2.8, 3, 4, [0.5, 6, 0.5]);
       }
-      at("roofUnit", 0, 5.8, 0, [5, 1.4, 3]);
+      at("roofUnit", 0, 6.8, 0, [5.5, 1.6, 3.4]);
+      at("mast", 0, 11, 0, [0.5, 9, 0.5]);
+      at("sign", 0, 4.4, 4.3, [8.5, 0.8, 0.3], { signal: "cold", source: "utility", emissive: 0.8 });
       break;
 
-    // A thin vertical index: many small equal entries, one above another.
+    // A thin vertical index: many small equal entries, one above another,
+    // under a crown that stops it reading as an unfinished column.
     case "ledger":
-      at("mass", 0, 5, 0, [4.5, 10, 4.5]);
+      at("mass", 0, 6.5, 0, [5, 13, 5]);
       for (let i = 0; i < 7; i += 1) {
-        at("platform", 0, 1.2 + i * 1.4, 0, [5.6, 0.25, 5.6]);
+        at("platform", 0, 1.4 + i * 1.7, 0, [6.2, 0.25, 6.2]);
       }
-      at("sign", 0, 10.6, 0, [2.4, 0.8, 0.4], { signal: "cold", source: "utility", emissive: 0.7 });
+      at("roofUnit", 0, 13.8, 0, [3.6, 1.7, 3.6]);
+      at("sign", 0, 15.4, 0, [2.8, 0.9, 0.4], { signal: "cold", source: "utility", emissive: 0.85 });
       break;
 
-    // A dish on a post, canted at the sky. Unmistakably something that sends.
+    // A dish on a post, canted at the sky. Unmistakably something that
+    // sends, and on a post long enough to clear the buildings around it.
     case "relay":
     default:
-      at("mast", 0, 5, 0, [0.6, 11, 0.6]);
-      at("sign", 0, 10.4, 0, [4.4, 0.6, 4.4], { tilt: -0.6, signal: "cold", source: "machine", emissive: 0.5 });
-      at("platform", 0, 0, 0, [6, 0.6, 6]);
+      at("mast", 0, 8.5, 0, [0.7, 17, 0.7]);
+      at("sign", 0, 16.5, 0, [5, 0.7, 5], { tilt: -0.6, signal: "cold", source: "machine", emissive: 0.65 });
+      at("platform", 0, 0, 0, [7, 0.8, 7]);
       break;
   }
 

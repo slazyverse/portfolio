@@ -39,6 +39,24 @@ export function generateStaticParams() {
   return CONTRACTS.map((c) => ({ slug: c.slug }));
 }
 
+/**
+ * And nothing else is a contract.
+ *
+ * Without this the router still tries to render an unknown slug at request
+ * time, reaches the `notFound()` below, and serves Next's own error shell —
+ * `<html id="__next_error__">`, with no `lang` attribute on it. A screen
+ * reader arriving at a mistyped URL is handed a document in no stated
+ * language, which axe reports as a serious WCAG failure and which is a fair
+ * description of what it is.
+ *
+ * Declaring the parameter set closed makes an unknown slug a routing miss
+ * rather than a render failure, so it resolves to the site's own 404 inside
+ * the root layout, with the chrome, the skip link and the language on it.
+ * The set genuinely is closed: it is `CONTRACTS`, and it is known at build
+ * time.
+ */
+export const dynamicParams = false;
+
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const contract = contractBySlug(slug);
