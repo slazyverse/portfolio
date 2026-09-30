@@ -22,7 +22,7 @@ import type { City, LevelEnvironment } from "@/lib/environment/types";
 import { KitPieces, Masses } from "./city/Buildings";
 import { lightRig, readPalette, type Palette } from "./city/palette";
 import { createCityTextures, type CityTextures } from "./city/textures";
-import { ContactShade, Steam, Traffic } from "./city/Life";
+import { ContactShade, Figures, Steam, Traffic } from "./city/Life";
 import { WetSheen } from "./city/Wet";
 import { Accents, Conduits, Rain, Skyline, Street } from "./city/World";
 
@@ -532,6 +532,25 @@ function Scene({
           city={city}
           floor={band.floor}
           plumes={budget.steam}
+          palette={palette}
+          paused={paused}
+        />
+      )}
+      {/*
+       * People, behind the same `motion` gate as everything else that moves.
+       *
+       * Reduced motion removes them rather than freezing them, which is the
+       * right answer here and not merely the convenient one: a frozen crowd
+       * is a set of mannequins standing in a street, which reads worse than
+       * an empty one. Nothing is lost by their absence — no content lives in
+       * the environment, and the city is still the same city.
+       */}
+      {motion && budget.figures > 0 && (
+        <Figures
+          band={band}
+          level={level}
+          count={budget.figures}
+          keep={budget.zoneKeep}
           palette={palette}
           paused={paused}
         />

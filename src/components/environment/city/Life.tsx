@@ -3,8 +3,15 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import type { StratumId } from "@/data/types";
 import { CITY_GEOMETRY, TRANSIT } from "@/lib/environment/generate";
-import type { City, LightSource, Part } from "@/lib/environment/types";
+import { occupants } from "@/lib/environment/occupancy";
+import type {
+  City,
+  LevelEnvironment,
+  LightSource,
+  Part,
+} from "@/lib/environment/types";
 import { lightSourceColour, type Palette } from "./palette";
 
 /* ---------------------------------------------------------------------------
@@ -616,5 +623,314 @@ export function ContactShade({ city }: { city: City }) {
         toneMapped={false}
       />
     </instancedMesh>
+  );
+}
+
+/* --------------------------------------------------------------- figures --- */
+
+const FIGURE_VERTEX = /* glsl */ `
+  uniform float uTime;
+  attribute vec2 aCorner;
+  attribute vec2 aForward;
+  attribute float aTravel;
+  attribute float aDwell;
+  attribute float aRate;
+  attribute float aPhase;
+  attribute float aHeight;
+  attribute vec3 aTint;
+  varying vec2 vCorner;
+  varying vec3 vTint;
+  varying float vFade;
+  varying float vStride;
+
+  void main() {
+    float t = fract(uTime * aRate + aPhase);
+
+    // One cycle is an arrival, a wait and a departure, and aDwell is how much
+    // of it is the wait. That single number carries every behaviour this
+    // layer has: a pedestrian with a dwell of zero simply crosses the frame,
+    // and a commuter with a dwell of a half walks onto the platform, stands
+    // there for most of a minute, and steps away.
+    float walk = max(1e-4, (1.0 - aDwell) * 0.5);
+    float u;
+    float moving;
+    if (t < walk) {
+      u = -0.5 + (t / walk) * 0.5;
+      moving = 1.0;
+    } else if (t < walk + aDwell) {
+      u = 0.0;
+      moving = 0.0;
+    } else {
+      u = (t - walk - aDwell) / walk * 0.5;
+      moving = 1.0;
+    }
+
+    vec3 centre = position;
+    centre.xz += aForward * (u * aTravel);
+
+    // Standing is not stillness. Someone waiting shifts their weight, and
+    // that is the difference between a person and a bollard: one sine, and it
+    // is what says the figure is alive while it is doing nothing.
+    float idle = sin(uTime * 0.9 + aPhase * 31.0) * 0.05 * (1.0 - moving);
+    centre.xz += vec2(-aForward.y, aForward.x) * idle;
+
+    // And walking bounces. The gait is carried by the bob far more than by
+    // the legs at any distance a reader is actually looking from.
+    vStride = uTime * aRate * aTravel * 3.4 + aPhase * 17.0;
+    centre.y += abs(sin(vStride)) * 0.028 * aHeight * moving;
+
+    vec4 mv = modelViewMatrix * vec4(centre, 1.0);
+    // Camera-facing, and standing on the ground rather than centred on it:
+    // aCorner.y runs nought at the feet to one at the head.
+    mv.x += aCorner.x * aHeight * 0.42;
+    mv.y += aCorner.y * aHeight;
+
+    // In at the start of the cycle and out at the end, so nobody appears in
+    // the middle of a platform or vanishes mid-stride.
+    vFade = smoothstep(0.0, 0.07, t) * (1.0 - smoothstep(0.88, 1.0, t));
+    /*
+     * And away into the same haze everything else here dissolves into.
+     *
+     * Over the distances this world is built at, not over the distance a
+     * person is legible at. The first pass faded from seventy metres and was
+     * gone by a hundred and seventy, which is fine on a street and wrong
+     * everywhere else: the interface camera stands on a deck a hundred and
+     * four metres from the station it overlooks, so the only human presence
+     * on that entire level was being rubbed out at nearly a third strength
+     * for being far away from a camera that has nothing nearer to look at.
+     * The traffic fades over three hundred, and this is the same world.
+     */
+    vFade *= 1.0 - smoothstep(150.0, 290.0, -mv.z);
+
+    vCorner = aCorner;
+    vTint = aTint;
+    vStride *= moving;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const FIGURE_FRAGMENT = /* glsl */ `
+  varying vec2 vCorner;
+  varying vec3 vTint;
+  varying float vFade;
+  varying float vStride;
+
+  void main() {
+    // A person, carved out of the quad rather than sampled from a texture:
+    // no atlas, no licensing surface, no memory, and about fifteen
+    // instructions on a shape that is thirty pixels tall.
+    //
+    // The proportions are metres divided by the quad, which is 0.42 of the
+    // figure height wide: shoulders 0.44 m across, a 0.20 m head, hips at
+    // 0.84 m on a person of 1.75. Getting these wrong by a little is exactly
+    // what makes a silhouette read as a bollard or as a child.
+    float x = vCorner.x;
+    float y = vCorner.y;
+
+    float head = 1.0 - smoothstep(0.125, 0.148, length(vec2(x, (y - 0.932) * 2.16)));
+
+    // Shoulders down to hips.
+    float w = mix(0.20, 0.30, smoothstep(0.48, 0.82, y));
+    float torso = (1.0 - smoothstep(w, w + 0.022, abs(x)))
+                * step(y, 0.875) * step(0.48, y);
+
+    // Two legs whose feet swing apart and together. Articulating them further
+    // would be paying for detail below the resolution it is drawn at.
+    float swing = sin(vStride) * 0.075;
+    float drop = (0.48 - y) / 0.48;
+    float legL = 1.0 - smoothstep(0.075, 0.095, abs(x + 0.11 + swing * drop));
+    float legR = 1.0 - smoothstep(0.075, 0.095, abs(x - 0.11 - swing * drop));
+    float legs = max(legL, legR) * step(y, 0.48) * step(0.0, y);
+
+    float mask = clamp(head + torso + legs, 0.0, 1.0);
+    if (mask * vFade < 0.02) discard;
+    gl_FragColor = vec4(vTint, mask * vFade);
+  }
+`;
+
+/**
+ * The people.
+ *
+ * The city has architecture, weather, materials and landmarks, and until now
+ * the only thing in it moving under its own power was traffic, which is
+ * people in boxes. Nobody waits for the train that runs through the middle of
+ * every shot. Nobody operates the plant floor. The reader can see that the
+ * place was built and cannot see that it is used.
+ *
+ * WHY THIS IS NOT A CHARACTER SYSTEM
+ *
+ * Because at the distance this is viewed from it would be indistinguishable
+ * from the cheap version, and the cheap version is one draw call. A figure in
+ * this world is between ten and forty pixels tall. What carries "a person is
+ * there" at that size is the silhouette proportion and the fact that it is
+ * going somewhere; what carries nothing at all is topology, skinning, a
+ * texture or a face. Everything here is two triangles and a fragment shader,
+ * animated from the same single time uniform the traffic and the steam use,
+ * with no CPU work per frame and nothing uploaded after construction.
+ *
+ * WHY THE PLACEMENT IS THE WHOLE CONTENT
+ *
+ * A person standing in the middle of a road is a bug. The same person at the
+ * edge of a platform is a commuter, at the face of a machine is an operator,
+ * and under a lit frontage at midnight is someone leaving late. None of that
+ * is in the figure: it is in where the figure is and what it does there,
+ * which is why all of it lives in lib/environment/occupancy.ts where it can
+ * be asserted in Node, and this file is left holding a quad.
+ */
+export function Figures({
+  band,
+  level,
+  count,
+  keep,
+  palette,
+  paused,
+}: {
+  band: LevelEnvironment;
+  level: StratumId;
+  /** How many people this tier draws on this level. */
+  count: number;
+  /** What fraction of the level activity zones this tier keeps. */
+  keep: number;
+  palette: Palette;
+  paused: React.RefObject<boolean>;
+}) {
+  const material = useRef<THREE.ShaderMaterial>(null);
+
+  const built = useMemo(() => {
+    const people = occupants(band, level, count, keep);
+    if (people.length === 0) return null;
+
+    const position = new Float32Array(people.length * 4 * 3);
+    const corner = new Float32Array(people.length * 4 * 2);
+    const forward = new Float32Array(people.length * 4 * 2);
+    const travel = new Float32Array(people.length * 4);
+    const dwell = new Float32Array(people.length * 4);
+    const rate = new Float32Array(people.length * 4);
+    const phase = new Float32Array(people.length * 4);
+    const height = new Float32Array(people.length * 4);
+    const tint = new Float32Array(people.length * 4 * 3);
+    const index: number[] = [];
+
+    /*
+     * What colour a person is at night.
+     *
+     * Mostly the colour of whatever is lighting them, at a quarter of its
+     * brightness and still carrying most of the dark they started with. The
+     * same argument the steam and the rain already make, and it matters more
+     * here: a figure is read almost entirely as a shape against a background,
+     * so the one thing it must not be is a flat grey cut-out belonging to no
+     * part of the scene.
+     *
+     * Two renders to land this, in opposite directions, and the axis that
+     * mattered turned out not to be the one it looked like.
+     *
+     * The first took the lamp at full saturation and 0.38 brightness, which
+     * under the street's sodium gave solid orange figures: lit objects rather
+     * than people catching a light, closer to a row of traffic cones than to
+     * a crowd. Reading that as "too bright" and darkening it was wrong — at
+     * 0.26 against a mid-grey road the near figures lost the contrast their
+     * silhouette needs and became a row of dull vertical posts, which is a
+     * worse failure, because a bollard is a thing this street actually has.
+     *
+     * The problem was saturation, not brightness. A sodium lamp is a narrow
+     * orange, and a surface lit by one is not that orange — it is a warm
+     * grey, because a person is not a mirror. So the lamp colour is pulled a
+     * third of the way to white before it is dimmed, which keeps the
+     * luminance the silhouette needs and takes away the glow.
+     *
+     * Where nothing is lighting them they stay what they always were: a hole
+     * in whatever is bright behind them.
+     */
+    const unlit = new THREE.Color("#141922");
+    const bleach = new THREE.Color("#ffffff");
+    const colour = new THREE.Color();
+
+    // Corners of the standing quad: x across, y from the feet to the head.
+    const corners: readonly (readonly [number, number])[] = [
+      [-0.5, 0],
+      [0.5, 0],
+      [0.5, 1],
+      [-0.5, 1],
+    ];
+
+    people.forEach((f, i) => {
+      if (f.source === null) colour.copy(unlit);
+      else colour.set(lightSourceColour(f.source, palette)).lerp(bleach, 0.32).multiplyScalar(0.4);
+
+      const fx = Math.cos(f.bearing);
+      const fz = Math.sin(f.bearing);
+
+      for (let v = 0; v < 4; v += 1) {
+        const k = i * 4 + v;
+        position[k * 3] = f.x;
+        position[k * 3 + 1] = f.y;
+        position[k * 3 + 2] = f.z;
+        corner[k * 2] = corners[v]![0];
+        corner[k * 2 + 1] = corners[v]![1];
+        forward[k * 2] = fx;
+        forward[k * 2 + 1] = fz;
+        travel[k] = f.travel;
+        dwell[k] = f.dwell;
+        rate[k] = f.rate;
+        phase[k] = f.phase;
+        height[k] = f.height;
+        tint[k * 3] = colour.r;
+        tint[k * 3 + 1] = colour.g;
+        tint[k * 3 + 2] = colour.b;
+      }
+
+      const base = i * 4;
+      index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    });
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(position, 3));
+    g.setAttribute("aCorner", new THREE.BufferAttribute(corner, 2));
+    g.setAttribute("aForward", new THREE.BufferAttribute(forward, 2));
+    g.setAttribute("aTravel", new THREE.BufferAttribute(travel, 1));
+    g.setAttribute("aDwell", new THREE.BufferAttribute(dwell, 1));
+    g.setAttribute("aRate", new THREE.BufferAttribute(rate, 1));
+    g.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
+    g.setAttribute("aHeight", new THREE.BufferAttribute(height, 1));
+    g.setAttribute("aTint", new THREE.BufferAttribute(tint, 3));
+    g.setIndex(index);
+    g.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(0, band.floor + 20, 0),
+      CITY_GEOMETRY.SPAN,
+    );
+
+    return { geometry: g, uniforms: { uTime: { value: 0 } } };
+  }, [band, level, count, keep, palette]);
+
+  useEffect(() => {
+    const g = built?.geometry;
+    return () => g?.dispose();
+  }, [built]);
+
+  useFrame((_, delta) => {
+    if (paused.current || !material.current) return;
+    material.current.uniforms.uTime!.value += Math.min(delta, 0.05);
+  });
+
+  if (built === null) return null;
+
+  return (
+    <mesh geometry={built.geometry} frustumCulled={false}>
+      <shaderMaterial
+        ref={material}
+        uniforms={built.uniforms}
+        vertexShader={FIGURE_VERTEX}
+        fragmentShader={FIGURE_FRAGMENT}
+        transparent
+        /*
+         * Depth tested so a figure behind a building is behind it, and not
+         * depth written, which is the same trade the steam and the traffic
+         * make. Two figures that overlap blend rather than occlude; at the
+         * lateral spread the zones use that is rare, and at this size it is
+         * not visible when it happens.
+         */
+        depthWrite={false}
+      />
+    </mesh>
   );
 }

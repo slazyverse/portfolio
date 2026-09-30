@@ -98,6 +98,29 @@ export interface EnvironmentBudget {
    * function of time rather than anything the CPU keeps.
    */
   traffic: number;
+  /**
+   * Ambient human presence: people using the city, as silhouettes.
+   *
+   * A count across the level rather than a flag, for the same reason steam is
+   * a count: the right answer at the middle tier is "fewer", not "none". A
+   * street with nobody on it is not a cheaper street, it is a different city —
+   * and the whole argument of this layer is that a place nobody uses does not
+   * read as a place.
+   *
+   * One draw call whatever the number. The cost is fill rate and it scales
+   * with how many figures are on screen, so a reduced count is a real
+   * reduction and an honest one.
+   */
+  figures: number;
+  /**
+   * What fraction of a level's activity zones a tier keeps, from the front of
+   * the priority list.
+   *
+   * Zones are dropped before they are thinned. A BALANCED platform should
+   * still look like a platform — losing the corporate lobby entirely is a
+   * smaller lie than leaving every zone in the city with two people in it.
+   */
+  zoneKeep: number;
   /** Soft contact shading under every building. */
   contactShade: boolean;
   /**
@@ -157,6 +180,12 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     groundFx: true,
     steam: 90,
     traffic: 340,
+    // Measured against the shot rather than picked: at ninety-six the
+    // platform, the two street lines, the plant and the lobbies all read as
+    // occupied without any one of them becoming a crowd. The station takes
+    // about a third of them, which is what a station should look like.
+    figures: 44,
+    zoneKeep: 1,
     contactShade: true,
     fixtureDetail: 1,
   },
@@ -176,8 +205,10 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     // the difference between BALANCED looking cheaper and looking dead.
     steam: 38,
     traffic: 150,
-    // Kept at BALANCED: it is one instanced draw call and it is most of what
-    // makes a building look like it is standing on the ground.
+    // Fewer people in fewer places. The platform and the near street survive;
+    // the lobbies and the deep service runs are what go.
+    figures: 20,
+    zoneKeep: 0.55,
     contactShade: true,
     fixtureDetail: 0.6,
   },
@@ -201,6 +232,17 @@ export const ENVIRONMENT_BUDGET: Record<QualityTier, EnvironmentBudget> = {
     groundFx: false,
     steam: 0,
     traffic: 0,
+    /*
+     * None, and the reason is the tier contract rather than a judgement about
+     * people.
+     *
+     * LOW never starts a WebGL context, so it has no traffic, no steam and no
+     * rain either — the cheapest contextual movement it preserves is the CSS
+     * atmosphere, which is the whole of what it renders. A figure count here
+     * would describe something that is never drawn.
+     */
+    figures: 0,
+    zoneKeep: 0,
     contactShade: false,
     fixtureDetail: 0.34,
   },

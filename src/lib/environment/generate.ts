@@ -2069,7 +2069,12 @@ export function generateCity(tier: QualityTier, seed: string = CITY_SEED): City 
        *   11  one instanced mesh per kit piece kind
        *    4  merged facade meshes, one per texture variant
        *    1  accent lights   1  conduits   1  street   2  skyline
-       *       plus rain, traffic, steam, light pooling and contact shade
+       *       plus rain, traffic, steam, figures, light pooling and
+       *       contact shade
+       *
+       * The figures are the one addition since: every person on a level
+       * shares a single mesh, so an occupied city costs one call more than an
+       * empty one and never more than that however many people are in it.
        *
        * The number that matters is that it is *fixed* — it does not grow with
        * the size of the city. Every building on every level, and every
@@ -2082,6 +2087,7 @@ export function generateCity(tier: QualityTier, seed: string = CITY_SEED): City 
         5 +
         (environmentBudget(tier).rain > 0 ? 1 : 0) +
         (environmentBudget(tier).traffic > 0 ? 1 : 0) +
+        (environmentBudget(tier).figures > 0 ? 1 : 0) +
         (environmentBudget(tier).groundFx ? 1 : 0) +
         (environmentBudget(tier).contactShade ? 1 : 0) +
         1,
