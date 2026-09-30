@@ -516,7 +516,13 @@ function Scene({
       <Conduits city={city} palette={palette} />
 
       {rains && (
-        <Rain count={budget.rain} palette={palette} paused={paused} floor={band.floor} />
+        <Rain
+          count={budget.rain}
+          palette={palette}
+          paused={paused}
+          floor={band.floor}
+          band={band}
+        />
       )}
       {motion && budget.traffic > 0 && (
         <Traffic count={budget.traffic} floor={band.floor} paused={paused} />
