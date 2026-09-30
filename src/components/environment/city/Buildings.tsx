@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { CITY_GEOMETRY } from "@/lib/environment/generate";
 import type { City, LightSource, Part, Structure } from "@/lib/environment/types";
+import { FACADE_ROUGHNESS_SCALAR } from "@/lib/environment/materials";
 import type { RouteId } from "@/data/types";
 import type { DistrictId } from "@/data/city-identity";
 import { FACADE_TILE, FACADE_VARIANTS, type CityTextures } from "./textures";
@@ -339,8 +340,17 @@ export function Masses({
               // interface token was what made these render as silhouettes.
               color={0xffffff}
               vertexColors
-              roughnessMap={textures.grime}
-              roughness={0.82}
+              /*
+               * In register with the albedo, at last.
+               *
+               * This was the shared grime map — a texture with no
+               * relationship to the facade, tiled at its own rate — so a
+               * window and the panel beside it returned the same reflection.
+               * In a city where almost every highlight is a window, that is
+               * the one material distinction worth having.
+               */
+              roughnessMap={textures.facadeRoughs[i]}
+              roughness={FACADE_ROUGHNESS_SCALAR}
               metalness={0.12}
             />
           </mesh>

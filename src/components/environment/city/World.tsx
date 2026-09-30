@@ -5,7 +5,13 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { StratumId } from "@/data/types";
 import { CITY_GEOMETRY } from "@/lib/environment/generate";
-import { ROAD_ROUGHNESS_SCALAR, isPaved } from "@/lib/environment/materials";
+import {
+  FLOOR_ROUGHNESS_SCALAR,
+  ROAD_ROUGHNESS_SCALAR,
+  floorFor,
+  isPaved,
+} from "@/lib/environment/materials";
+import { rainfall } from "@/lib/environment/weather";
 import type { City, LevelEnvironment, LightCell } from "@/lib/environment/types";
 import type { CityTextures } from "./textures";
 import { lightSourceColour, type Palette } from "./palette";
@@ -49,43 +55,62 @@ function Street({
    *
    * The first pass painted the same road across all four, so the substrate —
    * a server hall two hundred metres underground — had highway markings
-   * running through it. The engine floor kept them a phase longer, and a
-   * dashed white centre line through a plant hall reads as a highway for the
-   * same reason. A plant floor is a dark matte slab that has been worked on.
+   * running through it. What replaced that was the generic grime map, which
+   * was correct and said nothing; `floorFor` now answers the question
+   * properly and each of the three surfaces is drawn as what it is.
    */
   const paved = isPaved(level.level);
+  const kind = floorFor(level.level);
+  // A street tile is forty-six metres; a deck bay is eighteen. Both are the
+  // real dimension of the thing the tile is a picture of, which is what stops
+  // the repeat being readable as a repeat.
   const repeat = size / (paved ? 46 : 18);
 
-  const map = useMemo(() => {
-    const t = (paved ? textures.road : textures.grime).clone();
-    t.wrapS = THREE.RepeatWrapping;
-    t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(repeat, repeat);
-    t.needsUpdate = true;
-    return t;
-  }, [textures.road, textures.grime, paved, repeat]);
-
   /*
-   * How rough each square metre of it is.
+   * Three surfaces, not two.
    *
-   * Only the paved level. The engine and substrate floors are a worked
-   * concrete slab, and a slab is uniformly rough — giving it a map would be
-   * spending memory to say nothing. Cloned and repeated in lockstep with the
-   * albedo, because a puddle that is dark in one map and somewhere else in
-   * the other is worse than no puddle at all.
+   * For six phases the two deep levels shared the generic grime map, tinted,
+   * because the road map would have put a dashed centre line through a plant
+   * hall. Sharing a map is not the same as having a surface, though, and the
+   * ground is most of the lower half of every frame down there — the wrong
+   * place to say nothing. The engine floor is a working deck and the
+   * substrate is a sixty-year-old pour with water moving through it.
    */
-  const roughMap = useMemo(() => {
-    if (!paved) return null;
-    const t = textures.roadRough.clone();
-    t.wrapS = THREE.RepeatWrapping;
-    t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(repeat, repeat);
-    t.needsUpdate = true;
-    return t;
-  }, [textures.roadRough, paved, repeat]);
+  const { map, roughMap } = useMemo(() => {
+    const source =
+      kind === "road"
+        ? { albedo: textures.road, rough: textures.roadRough }
+        : kind === "engine"
+          ? { albedo: textures.engineFloor, rough: textures.engineFloorRough }
+          : { albedo: textures.substrateFloor, rough: textures.substrateFloorRough };
 
-  useEffect(() => () => map.dispose(), [map]);
-  useEffect(() => () => roughMap?.dispose(), [roughMap]);
+    const fit = (t: THREE.Texture) => {
+      const c = t.clone();
+      c.wrapS = THREE.RepeatWrapping;
+      c.wrapT = THREE.RepeatWrapping;
+      c.repeat.set(repeat, repeat);
+      c.needsUpdate = true;
+      return c;
+    };
+    return { map: fit(source.albedo), roughMap: fit(source.rough) };
+  }, [
+    kind,
+    repeat,
+    textures.road,
+    textures.roadRough,
+    textures.engineFloor,
+    textures.engineFloorRough,
+    textures.substrateFloor,
+    textures.substrateFloorRough,
+  ]);
+
+  useEffect(
+    () => () => {
+      map.dispose();
+      roughMap.dispose();
+    },
+    [map, roughMap],
+  );
 
   return (
     <mesh
@@ -103,7 +128,12 @@ function Street({
         // engine and substrate floors were so dark that the grime texture on
         // them carried no information at all, and half of each frame was flat
         // black.
-        color={paved ? "#ffffff" : "#3a434e"}
+        // White: the map is the albedo. Multiplying it by a near-black
+        // interface token made the street disappear once, which is the same
+        // mistake as tinting the facades with one — and the deep floors were
+        // being tinted at #3a434e precisely because their map carried no
+        // information of its own. It does now, so it is not tinted either.
+        color="#ffffff"
         /*
          * Wet asphalt is smoother and more metallic in its response than dry,
          * but not by as much as the first numbers claimed.
@@ -128,8 +158,12 @@ function Street({
          * on the road.
          */
         roughnessMap={roughMap}
-        roughness={paved ? ROAD_ROUGHNESS_SCALAR : 0.9}
-        metalness={paved ? 0.34 : 0.1}
+        roughness={paved ? ROAD_ROUGHNESS_SCALAR : FLOOR_ROUGHNESS_SCALAR}
+        // Asphalt is a broad soft reflection and concrete is a diffuse
+        // darkening. That difference is metalness, and it is why a wet street
+        // smears the light above it down its length while a wet slab just
+        // goes darker.
+        metalness={paved ? 0.34 : 0.12}
       />
     </mesh>
   );
@@ -245,36 +279,50 @@ function Skyline({ level, palette }: { level: LevelEnvironment; palette: Palette
 
 const RAIN_VERTEX = /* glsl */ `
   uniform float uTime;
-  uniform float uTop;
-  uniform float uSpan;
   attribute float aPhase;
   attribute float aSpeed;
   attribute float aEnd;
   attribute float aLength;
+  attribute float aTop;
+  attribute float aFall;
+  attribute vec3 aTint;
   varying float vFade;
+  varying vec3 vTint;
 
   void main() {
     // The entire animation. One uniform changes per frame and nothing is
     // uploaded: a drop's position is a function of time, not a value the CPU
     // keeps and pushes.
+    //
+    // Where it starts and how far it falls are per drop rather than global,
+    // which is what lets a drop under a viaduct start at the underside of
+    // the viaduct instead of somewhere above the roof it is behind.
     float t = fract(uTime * aSpeed + aPhase);
-    vec3 p = position;
-    p.y = uTop - t * uSpan - aEnd * aLength;
-    vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    // Near drops are bright and sharp; far ones dissolve into the haze, which
-    // is what stops rain reading as a screen overlay.
-    float near = 1.0 - clamp(-mv.z / 340.0, 0.0, 1.0);
-    vFade = smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.86, 1.0, t)) * (0.25 + near * 0.9);
+    float y = aTop - t * aFall;
+
+    // Depth is measured at the head of the streak, before the streak has a
+    // length, so the length can depend on it.
+    vec4 head = modelViewMatrix * vec4(position.x, y, position.z, 1.0);
+    float near = 1.0 - clamp(-head.z / 340.0, 0.0, 1.0);
+
+    // A near drop is a long streak and a far one is a tick. Rain that is the
+    // same length at every distance is a screen overlay, whatever it fades
+    // to — this is the cue that puts the weather in the world.
+    float len = aLength * (0.5 + near * 1.3);
+    vec4 mv = modelViewMatrix * vec4(position.x, y - aEnd * len, position.z, 1.0);
+
+    vFade = smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.86, 1.0, t)) * (0.18 + near * 1.0);
+    vTint = aTint;
     gl_Position = projectionMatrix * mv;
   }
 `;
 
 const RAIN_FRAGMENT = /* glsl */ `
-  uniform vec3 uColor;
   uniform float uOpacity;
   varying float vFade;
+  varying vec3 vTint;
   void main() {
-    gl_FragColor = vec4(uColor, vFade * uOpacity);
+    gl_FragColor = vec4(vTint, vFade * uOpacity);
   }
 `;
 
@@ -289,54 +337,94 @@ const RAIN_FRAGMENT = /* glsl */ `
  * It falls through the upper levels only. Rain in the substrate would be rain
  * underground, and the one thing this world cannot afford is to look like it
  * was assembled without thinking about what the place is.
+ *
+ * WHERE IT LANDS
+ *
+ * The same thought, one level down. Rain fell through the viaducts, the
+ * station canopy and every skybridge in the city as though none of them were
+ * there, which is the single loudest way weather can announce that it is an
+ * effect rather than a condition — the shelter is visibly modelled, drawn in
+ * front of the reader, and the water ignored it.
+ *
+ * So each drop is asked what is above it. A drop under a span starts at the
+ * underside of that span rather than at the cloud base, and most of the drops
+ * under one are dropped entirely: what is left is the water coming off the
+ * structure, which is what you actually see standing under a bridge in the
+ * rain. Deterministic, resolved once at build, and it costs the same single
+ * draw call as before.
+ *
+ * WHAT COLOUR IT IS
+ *
+ * Whatever is lighting it, on the same argument as the steam. Rain in front
+ * of a sodium lamp is orange rain.
  */
 function Rain({
   count,
   palette,
   paused,
   floor,
+  band,
 }: {
   count: number;
   palette: Palette;
   paused: React.RefObject<boolean>;
   floor: number;
+  /** The level it is falling through, for what shelters and what lights it. */
+  band: LevelEnvironment;
 }) {
   const material = useRef<THREE.ShaderMaterial>(null);
 
-  const { geometry, uniforms } = useMemo(() => {
+  const { geometry, uniforms, drawn } = useMemo(() => {
     const span = 420;
     const radius = CITY_GEOMETRY.SPAN * 0.5;
 
-    const position = new Float32Array(count * 2 * 3);
-    const phase = new Float32Array(count * 2);
-    const speed = new Float32Array(count * 2);
-    const end = new Float32Array(count * 2);
-    const length = new Float32Array(count * 2);
+    /*
+     * The storm is resolved as data first.
+     *
+     * Where each drop starts, how far it falls, whether it is rain or the
+     * water running off a soffit, and what is lighting it are all geometry
+     * over this level's own parts — so they live in `lib/environment`, are
+     * asserted in Node, and arrive here already decided. What is left is the
+     * transcription into buffers, which is the only part that needs three.
+     */
+    const drops = rainfall(band, count, radius, floor + span * 0.62);
 
-    // A fixed stream, derived from the index rather than from a clock, so the
-    // weather is as reproducible as the city it falls on.
-    for (let i = 0; i < count; i += 1) {
-      const a = (i * 2.399963) % (Math.PI * 2);
-      // Square root keeps the areal density even; without it every drop
-      // crowds the centre of the shaft.
-      const r = radius * Math.sqrt((i * 0.6180339887) % 1);
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      const p = (i * 0.7548776662) % 1;
-      const s = 0.1 + ((i * 0.5698402909) % 1) * 0.12;
-      const len = 3.5 + ((i * 0.3247179572) % 1) * 9;
+    const cold = new THREE.Color(palette.cold);
+    const lit = new THREE.Color();
+
+    const position = new Float32Array(drops.length * 2 * 3);
+    const phase = new Float32Array(drops.length * 2);
+    const speed = new Float32Array(drops.length * 2);
+    const end = new Float32Array(drops.length * 2);
+    const length = new Float32Array(drops.length * 2);
+    const top = new Float32Array(drops.length * 2);
+    const fall = new Float32Array(drops.length * 2);
+    const tint = new Float32Array(drops.length * 2 * 3);
+
+    drops.forEach((d, i) => {
+      // Lit by whatever is nearest, mixed most of the way back to the cold of
+      // the sky. Rain is water: it carries the colour it is given.
+      const colour =
+        d.source === null
+          ? cold
+          : lit.set(lightSourceColour(d.source, palette)).lerp(cold, 0.58);
 
       for (let v = 0; v < 2; v += 1) {
         const k = i * 2 + v;
-        position[k * 3] = x;
+        position[k * 3] = d.x;
         position[k * 3 + 1] = 0;
-        position[k * 3 + 2] = z;
-        phase[k] = p;
-        speed[k] = s;
+        position[k * 3 + 2] = d.z;
+        phase[k] = d.phase;
+        speed[k] = d.speed;
         end[k] = v;
-        length[k] = len;
+        length[k] = d.length;
+        top[k] = d.top;
+        fall[k] = d.fall;
+        tint[k * 3] = colour.r;
+        tint[k * 3 + 1] = colour.g;
+        tint[k * 3 + 2] = colour.b;
       }
-    }
+    });
 
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(position, 3));
@@ -344,19 +432,17 @@ function Rain({
     g.setAttribute("aSpeed", new THREE.BufferAttribute(speed, 1));
     g.setAttribute("aEnd", new THREE.BufferAttribute(end, 1));
     g.setAttribute("aLength", new THREE.BufferAttribute(length, 1));
+    g.setAttribute("aTop", new THREE.BufferAttribute(top, 1));
+    g.setAttribute("aFall", new THREE.BufferAttribute(fall, 1));
+    g.setAttribute("aTint", new THREE.BufferAttribute(tint, 3));
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), radius * 2 + span);
 
     return {
       geometry: g,
-      uniforms: {
-        uTime: { value: 0 },
-        uTop: { value: floor + span * 0.62 },
-        uSpan: { value: span },
-        uColor: { value: new THREE.Color(palette.cold) },
-        uOpacity: { value: 0.42 },
-      },
+      drawn: drops.length,
+      uniforms: { uTime: { value: 0 }, uOpacity: { value: 0.42 } },
     };
-  }, [count, palette.cold, floor]);
+  }, [count, palette, floor, band]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -366,6 +452,10 @@ function Rain({
     // the rain by a minute in a single frame.
     material.current.uniforms.uTime!.value += Math.min(delta, 0.05);
   });
+
+  // Shelter can remove every drop on a level that is entirely under
+  // something, and an empty buffer is a draw call that renders nothing.
+  if (drawn === 0) return null;
 
   return (
     <lineSegments geometry={geometry} frustumCulled={false}>

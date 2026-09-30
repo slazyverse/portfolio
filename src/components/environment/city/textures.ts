@@ -1,5 +1,10 @@
 import * as THREE from "three";
-import { ROAD_ROUGHNESS as RR } from "@/lib/environment/materials";
+import {
+  FACADE_ROUGHNESS,
+  FLOOR_ALBEDO as FA,
+  FLOOR_ROUGHNESS as FR,
+  ROAD_ROUGHNESS as RR,
+} from "@/lib/environment/materials";
 import { createRng, type Rng } from "@/lib/environment/seed";
 
 /* ---------------------------------------------------------------------------
@@ -67,10 +72,25 @@ export interface CityTextures {
   facades: THREE.CanvasTexture[];
   /** Lit windows only, in register with the albedo of the same index. */
   facadeEmissives: THREE.CanvasTexture[];
+  /**
+   * How rough each part of that facade is, in register with both.
+   *
+   * Glass smooth, concrete rough, louvred plant rougher, grime rougher again.
+   * Before this the facades used the shared grime map, which had no
+   * relationship to them at all: every window in the city returned the same
+   * reflection as the wall it was set into.
+   */
+  facadeRoughs: THREE.CanvasTexture[];
   /** Roughness variation: grime, streaking, wear. Shared across surfaces. */
   grime: THREE.CanvasTexture;
   /** Wet asphalt with lane markings, worn paint, seams, covers and patches. */
   road: THREE.CanvasTexture;
+  /** The engine and interface deck: bays, grating, walkway, machine wear. */
+  engineFloor: THREE.CanvasTexture;
+  engineFloorRough: THREE.CanvasTexture;
+  /** The substrate slab: drainage, spalling, efflorescence, repairs. */
+  substrateFloor: THREE.CanvasTexture;
+  substrateFloorRough: THREE.CanvasTexture;
   /**
    * How rough each square metre of that road is.
    *
@@ -159,6 +179,22 @@ function weatherStreaks(
 function drawFacade(
   albedo: CanvasRenderingContext2D,
   emissive: CanvasRenderingContext2D,
+  /**
+   * How rough each square metre of the facade is, in register with the other
+   * two.
+   *
+   * The facades were given the shared grime map as a roughness map — a
+   * texture with no relationship to them at all, tiled at a different rate,
+   * so a building's specular response had nothing to do with where its
+   * windows were. Glass and concrete came back identical, which is the one
+   * material distinction a night city cannot afford to lose: almost every
+   * highlight in a frame like this is a window.
+   *
+   * Painted here rather than in a second pass for the same reason the
+   * emissive is: two streams that have to agree about which windows exist
+   * eventually will not.
+   */
+  rough: CanvasRenderingContext2D,
   rng: Rng,
   x0: number,
   y0: number,
@@ -175,6 +211,11 @@ function drawFacade(
 
   emissive.fillStyle = "#000000";
   emissive.fillRect(x0, y0, cell, cell);
+
+  // Concrete and precast panel: the roughest thing on the elevation, and what
+  // most of it is.
+  rough.fillStyle = FACADE_ROUGHNESS.concrete;
+  rough.fillRect(x0, y0, cell, cell);
 
   // --- structural rhythm --------------------------------------------------
   // Floors and columns. A facade is a structure before it is a grid of holes,
@@ -201,8 +242,11 @@ function drawFacade(
   // Structural columns, lighter than the infill: they catch the light and
   // they are what gives a facade its vertical rhythm.
   albedo.fillStyle = "rgba(255,255,255,0.12)";
+  rough.fillStyle = FACADE_ROUGHNESS.painted;
   for (let b = 0; b <= bays; b += 1) {
     albedo.fillRect(x0 + b * bayW - bayW * 0.06, y0, bayW * 0.12, cell);
+    // A structural column is clad or painted, not bare concrete.
+    rough.fillRect(x0 + b * bayW - bayW * 0.06, y0, bayW * 0.12, cell);
   }
 
   // --- service bands ------------------------------------------------------
@@ -215,6 +259,9 @@ function drawFacade(
   for (const f of serviceFloors) {
     albedo.fillStyle = "rgba(0,0,0,0.3)";
     albedo.fillRect(x0, y0 + f * floorH, cell, floorH);
+    // Louvres and plant. Rougher than the wall and much rougher than glass.
+    rough.fillStyle = FACADE_ROUGHNESS.louvre;
+    rough.fillRect(x0, y0 + f * floorH, cell, floorH);
     albedo.strokeStyle = "rgba(255,255,255,0.09)";
     albedo.lineWidth = 1;
     for (let l = 1; l < 4; l += 1) {
@@ -305,13 +352,21 @@ function drawFacade(
       albedo.fillStyle = "rgba(0,0,0,0.55)";
       albedo.fillRect(wx - reveal * 0.5, wy - reveal * 0.5, ww + reveal, wh + reveal);
 
-      // The glass itself, inset inside the reveal.
+      // The glass itself, inset inside the reveal — and the only genuinely
+      // smooth thing on the building. This is the whole point of the map: a
+      // window returns a sharp reflection and the wall around it does not,
+      // and until now they returned the same one.
       albedo.fillStyle = glass;
       albedo.fillRect(wx, wy, ww, wh);
+      rough.fillStyle = FACADE_ROUGHNESS.glass;
+      rough.fillRect(wx, wy, ww, wh);
 
-      // The lit sill, catching bounce from the street below.
+      // The lit sill, catching bounce from the street below. Metal, so it
+      // sits between the glass and the wall.
       albedo.fillStyle = "rgba(255,255,255,0.2)";
       albedo.fillRect(wx - reveal * 0.4, wy + wh, ww + reveal * 0.8, Math.max(1, reveal));
+      rough.fillStyle = FACADE_ROUGHNESS.metal;
+      rough.fillRect(wx - reveal * 0.4, wy + wh, ww + reveal * 0.8, Math.max(1, reveal));
       // And a thin bright mullion down one side.
       albedo.fillStyle = "rgba(255,255,255,0.1)";
       albedo.fillRect(wx + ww, wy, Math.max(1, reveal * 0.5), wh);
@@ -371,22 +426,60 @@ function drawFacade(
   blobNoise(albedo, rng, cell, 12, [cell * 0.06, cell * 0.2], 0.18, "#000000");
   blobNoise(albedo, rng, cell, 5, [cell * 0.05, cell * 0.14], 0.06, "#5a6273");
   albedo.restore();
+
+  /*
+   * And the same wear in the roughness map.
+   *
+   * Dirt is rough. A streak of it down a glazed elevation kills the
+   * reflection exactly where it runs, which is most of what separates a
+   * maintained frontage from a neglected one — the windows of a building
+   * nobody washes stop being windows.
+   *
+   * Drawn from its own stream rather than the shared one so the albedo's
+   * grime and this stay independent: a facade where every dirty patch is
+   * also exactly a dull patch reads as a decal of dirt.
+   */
+  rough.save();
+  rough.beginPath();
+  rough.rect(x0, y0, cell, cell);
+  rough.clip();
+  rough.translate(x0, y0);
+  blobNoise(rough, rng, cell, 14, [cell * 0.05, cell * 0.22], 0.3, FACADE_ROUGHNESS.grime);
+  blobNoise(rough, rng, cell, 6, [cell * 0.04, cell * 0.12], 0.16, FACADE_ROUGHNESS.clean);
+  rough.restore();
 }
 
 function buildFacade(
   size: number,
   seed: string,
   variant: number,
-): [THREE.CanvasTexture, THREE.CanvasTexture] {
+): [THREE.CanvasTexture, THREE.CanvasTexture, THREE.CanvasTexture] {
   const [albedoCanvas, albedo] = canvas(size);
   const [emissiveCanvas, emissive] = canvas(size);
+  /*
+   * Half the edge length, a quarter of the pixels.
+   *
+   * Roughness varies over a facade far more slowly than albedo does — it is
+   * "glass, wall, louvre, dirt" rather than every mullion and sill — and at
+   * full size four of these put the texture set at 19.8 MB against a 16 MB
+   * ceiling. Halving them lands at 15.8. The boundary between a window and
+   * the wall around it is still eleven pixels wide, which is more than a
+   * specular response needs.
+   */
+  const roughSize = Math.max(128, Math.round(size / 2));
+  const [roughCanvas, rough] = canvas(roughSize);
 
   // Half the variants are occupied, half are machine-lit. The palette
   // semantics hold here exactly as they do everywhere else: amber means a
   // person is present, cold means the building is running itself.
+  // The roughness context is scaled so the same drawing code lands in the
+  // same place on both canvases, whatever their resolutions are.
+  rough.scale(roughSize / size, roughSize / size);
+
   drawFacade(
     albedo,
     emissive,
+    rough,
     createRng(`${seed}:facade:${variant}`),
     0,
     0,
@@ -396,7 +489,8 @@ function buildFacade(
 
   const map = new THREE.CanvasTexture(albedoCanvas);
   const emissiveMap = new THREE.CanvasTexture(emissiveCanvas);
-  for (const t of [map, emissiveMap]) {
+  const roughnessMap = new THREE.CanvasTexture(roughCanvas);
+  for (const t of [map, emissiveMap, roughnessMap]) {
     t.wrapS = THREE.RepeatWrapping;
     t.wrapT = THREE.RepeatWrapping;
     t.anisotropy = 4;
@@ -405,7 +499,9 @@ function buildFacade(
   }
   map.colorSpace = THREE.SRGBColorSpace;
   emissiveMap.colorSpace = THREE.SRGBColorSpace;
-  return [map, emissiveMap];
+  // Data, not colour.
+  roughnessMap.colorSpace = THREE.NoColorSpace;
+  return [map, emissiveMap, roughnessMap];
 }
 
 function buildGrime(size: number, seed: string): THREE.CanvasTexture {
@@ -496,7 +592,7 @@ function buildRoad(
   // joint, an effective 0.43 to 0.58. Measured rather than assumed — the
   // first draft reached 0.56 and put twenty-three times as many blown pixels
   // on the road.
-  ctx.fillStyle = "#2b3038";
+  ctx.fillStyle = FA.road;
   ctx.fillRect(0, 0, size, size);
   rgh.fillStyle = RR.asphalt;
   rgh.fillRect(0, 0, roughSize, roughSize);
@@ -718,6 +814,284 @@ function buildRoad(
 }
 
 /**
+ * The floors nobody walks on, and what they say about the place.
+ *
+ * The engine and substrate levels shared one texture — the generic grime map,
+ * tinted — because they are not streets and the road map would have put a
+ * dashed centre line through a plant hall. Sharing a map is not the same as
+ * having a surface, though, and it left two of the four levels standing on
+ * the same anonymous slab. The ground is most of the lower half of every
+ * frame at those depths. It is the wrong place to say nothing.
+ *
+ * Each level gets one now, and they are different because the places are:
+ *
+ *   ENGINE     a working deck. Structural bays, bolt lines, walkway markings,
+ *              grating over the services, access hatches, and the oil of
+ *              machinery that gets maintained where it stands.
+ *   SUBSTRATE  older, deeper, wetter. Big poured slabs, a drainage channel
+ *              with damp either side, spalling where the aggregate shows
+ *              through, efflorescence off the salts, and repairs on top of
+ *              repairs.
+ *
+ * Both come with a roughness map, for the same reason the road does: what
+ * makes a surface read as a material is how it returns light, and a single
+ * scalar over an entire floor says it is all one thing.
+ *
+ * Drawn at half the facade edge length. A floor tile covers eighteen metres
+ * against the road's forty-six, so half the pixels is still more resolution
+ * per metre than the road gets.
+ */
+function buildFloor(
+  size: number,
+  seed: string,
+  level: "engine" | "substrate",
+): { albedo: THREE.CanvasTexture; roughness: THREE.CanvasTexture } {
+  const [element, ctx] = canvas(size);
+  // A quarter of the albedo's edge length, on the same argument as
+  // everywhere else: roughness on a concrete floor varies over metres.
+  const roughSize = Math.max(64, Math.round(size / 2));
+  const [roughElement, rgh] = canvas(roughSize);
+  const rng = createRng(`${seed}:floor:${level}`);
+  const engine = level === "engine";
+
+  const paint = (
+    albedo: string | null,
+    rough: string | null,
+    draw: (c: CanvasRenderingContext2D, s: number) => void,
+  ): void => {
+    if (albedo !== null) {
+      ctx.save();
+      ctx.fillStyle = albedo;
+      ctx.strokeStyle = albedo;
+      draw(ctx, size);
+      ctx.restore();
+    }
+    if (rough !== null) {
+      rgh.save();
+      rgh.fillStyle = rough;
+      rgh.strokeStyle = rough;
+      draw(rgh, roughSize);
+      rgh.restore();
+    }
+  };
+
+  // --- base ---------------------------------------------------------------
+  // The engine deck is painted steel and poured concrete kept in service; the
+  // substrate is the original pour, sixty years older and never repainted.
+  ctx.fillStyle = engine ? FA.engine : FA.substrate;
+  ctx.fillRect(0, 0, size, size);
+  rgh.fillStyle = engine ? FR.deck : FR.oldConcrete;
+  rgh.fillRect(0, 0, roughSize, roughSize);
+
+  blobNoise(ctx, rng, size, 34, [size * 0.03, size * 0.14], 0.22, engine ? "#464e59" : "#373e47");
+  blobNoise(ctx, rng, size, 28, [size * 0.04, size * 0.18], 0.24, engine ? "#2b313a" : "#21262d");
+  blobNoise(rgh, rng, roughSize, 14, [roughSize * 0.08, roughSize * 0.3], 0.26, FR.dry);
+
+  // --- structural bays ----------------------------------------------------
+  /*
+   * A floor this size is not one pour. It is bays, and the joints between
+   * them are the single strongest cue for how big everything else is — a
+   * surface with no joints in it has no scale, which is most of why these
+   * two levels read as backdrop.
+   */
+  const bays = engine ? 4 : 3;
+  for (let i = 1; i < bays; i += 1) {
+    const u = i / bays;
+    paint("rgba(0,0,0,0.42)", FR.joint, (c, s) => c.fillRect(u * s, 0, s * 0.006, s));
+    paint("rgba(0,0,0,0.42)", FR.joint, (c, s) => c.fillRect(0, u * s, s, s * 0.006));
+    // The lip. One side of a joint is always a little proud of the other.
+    paint("rgba(255,255,255,0.05)", null, (c, s) => c.fillRect(u * s - s * 0.005, 0, s * 0.005, s));
+  }
+
+  if (engine) {
+    // --- grating ----------------------------------------------------------
+    // Over the services. Dark between the slats and bright along them, which
+    // is what makes an open grating read as a hole rather than as a stripe.
+    for (let i = 0; i < 2; i += 1) {
+      const gx = rng.range(0.08, 0.62);
+      const gy = rng.range(0.08, 0.66);
+      const gw = rng.range(0.16, 0.26);
+      const gh = rng.range(0.1, 0.18);
+      paint("#1b2027", FR.grate, (c, s) => c.fillRect(gx * s, gy * s, gw * s, gh * s));
+      paint("rgba(186,196,208,0.5)", null, (c, s) => {
+        const step = s * 0.008;
+        for (let y = gy * s; y < (gy + gh) * s; y += step) {
+          c.fillRect(gx * s, y, gw * s, step * 0.42);
+        }
+      });
+      paint("rgba(0,0,0,0.5)", FR.steel, (c, s) => {
+        c.lineWidth = Math.max(1, s * 0.004);
+        c.strokeRect(gx * s, gy * s, gw * s, gh * s);
+      });
+    }
+
+    // --- walkway ----------------------------------------------------------
+    // Two lines and the space between them is where a person is allowed to
+    // stand. Worn through in the middle, because that is where they walk.
+    const wy = rng.range(0.7, 0.86);
+    for (const off of [0, 0.11]) {
+      paint("rgba(198,166,64,0.62)", FR.paint, (c, s) =>
+        c.fillRect(0, (wy + off) * s, s, s * 0.012),
+      );
+    }
+    paint("rgba(0,0,0,0.22)", null, (c, s) =>
+      c.fillRect(s * 0.18, (wy + 0.02) * s, s * 0.5, s * 0.07),
+    );
+
+    // --- access hatches ---------------------------------------------------
+    for (let i = 0; i < 2; i += 1) {
+      const hx = rng.range(0.12, 0.84);
+      const hy = rng.range(0.1, 0.62);
+      const r = 0.026;
+      paint("#262c34", FR.steel, (c, s) => {
+        c.beginPath();
+        c.arc(hx * s, hy * s, r * s, 0, Math.PI * 2);
+        c.fill();
+      });
+      paint("rgba(198,206,216,0.22)", null, (c, s) => {
+        c.lineWidth = Math.max(1, s * 0.005);
+        c.beginPath();
+        c.arc(hx * s, hy * s, r * s, 0, Math.PI * 2);
+        c.stroke();
+      });
+    }
+
+    // --- machine wear -----------------------------------------------------
+    // An arc scuffed into the deck by something that swings, and the oil that
+    // has been dripping under it for years. Oil is darker and much smoother
+    // than the deck, which is the whole reason it reads as a spill.
+    for (let i = 0; i < 3; i += 1) {
+      const ox = rng.range(0.1, 0.9);
+      const oy = rng.range(0.1, 0.9);
+      const orad = rng.range(0.04, 0.1);
+      paint("#191d23", FR.oil, (c, s) => {
+        const g = c.createRadialGradient(ox * s, oy * s, 0, ox * s, oy * s, orad * s);
+        g.addColorStop(0, c.fillStyle as string);
+        g.addColorStop(1, "transparent");
+        c.globalAlpha = 0.5;
+        c.fillStyle = g;
+        c.beginPath();
+        c.arc(ox * s, oy * s, orad * s, 0, Math.PI * 2);
+        c.fill();
+      });
+    }
+    paint("rgba(255,255,255,0.05)", FR.scuff, (c, s) => {
+      c.lineWidth = Math.max(1, s * 0.012);
+      c.beginPath();
+      c.arc(s * 0.3, s * 0.42, s * 0.19, 0.3, 2.1);
+      c.stroke();
+    });
+  } else {
+    // --- drainage channel -------------------------------------------------
+    /*
+     * Water in a basement goes somewhere, and where it goes is the most
+     * informative thing on the floor: it says which way is downhill, which
+     * is a fact about a place that no amount of lighting can supply.
+     */
+    const cy = rng.range(0.3, 0.66);
+    paint(null, FR.damp, (c, s) => {
+      const g = c.createLinearGradient(0, (cy - 0.09) * s, 0, (cy + 0.11) * s);
+      g.addColorStop(0, "transparent");
+      g.addColorStop(0.5, FR.damp);
+      g.addColorStop(1, "transparent");
+      c.fillStyle = g;
+      c.fillRect(0, (cy - 0.09) * s, s, s * 0.2);
+    });
+    paint("rgba(0,0,0,0.3)", null, (c, s) => {
+      const g = c.createLinearGradient(0, (cy - 0.07) * s, 0, (cy + 0.09) * s);
+      g.addColorStop(0, "transparent");
+      g.addColorStop(0.5, "rgba(0,0,0,0.34)");
+      g.addColorStop(1, "transparent");
+      c.fillStyle = g;
+      c.fillRect(0, (cy - 0.07) * s, s, s * 0.16);
+    });
+    // The channel itself, and the grating over part of it.
+    paint("#14181e", FR.water, (c, s) => c.fillRect(0, cy * s, s, s * 0.022));
+    paint("rgba(150,162,176,0.3)", FR.steel, (c, s) => {
+      const step = s * 0.01;
+      for (let x = s * 0.34; x < s * 0.62; x += step) {
+        c.fillRect(x, cy * s, step * 0.4, s * 0.022);
+      }
+    });
+
+    // --- spalling ---------------------------------------------------------
+    // Concrete that has lost its face, with the aggregate showing through.
+    // Lighter, and much rougher: the only place on this floor where the
+    // material underneath is visible.
+    for (let i = 0; i < 4; i += 1) {
+      const px = rng.range(0.05, 0.9);
+      const py = rng.range(0.05, 0.9);
+      const pr = rng.range(0.03, 0.075);
+      paint("#3f464e", FR.spall, (c, s) => {
+        c.globalAlpha = 0.5;
+        c.beginPath();
+        c.arc(px * s, py * s, pr * s, 0, Math.PI * 2);
+        c.fill();
+      });
+      paint("rgba(0,0,0,0.4)", null, (c, s) => {
+        c.lineWidth = Math.max(1, s * 0.003);
+        c.beginPath();
+        c.arc(px * s, py * s, pr * s, 0, Math.PI * 2);
+        c.stroke();
+      });
+    }
+
+    // --- efflorescence ----------------------------------------------------
+    // Salt carried out of the concrete by water and left on the surface. Pale
+    // and chalky: rougher than what it sits on, and the clearest sign that
+    // this floor has water moving through it rather than over it.
+    for (let i = 0; i < 5; i += 1) {
+      const ex = rng.range(0, 1);
+      const ey = rng.range(0, 1);
+      const er = rng.range(0.04, 0.12);
+      paint("rgba(196,200,196,0.11)", FR.salt, (c, s) => {
+        const g = c.createRadialGradient(ex * s, ey * s, 0, ex * s, ey * s, er * s);
+        g.addColorStop(0, c.fillStyle as string);
+        g.addColorStop(1, "transparent");
+        c.fillStyle = g;
+        c.beginPath();
+        c.arc(ex * s, ey * s, er * s, 0, Math.PI * 2);
+        c.fill();
+      });
+    }
+
+    // --- repairs ----------------------------------------------------------
+    // Patch over patch. Each one a slightly different mix, none of them
+    // matching, which is what sixty years of somebody else's budget looks
+    // like.
+    for (let i = 0; i < 3; i += 1) {
+      const rx = rng.range(0.02, 0.7);
+      const ry = rng.range(0.02, 0.7);
+      const rw = rng.range(0.12, 0.28);
+      const rh = rng.range(0.08, 0.2);
+      const tone = rng.pick(["#333a43", "#2a3038", "#3a414a"]);
+      paint(tone, FR.repair, (c, s) => c.fillRect(rx * s, ry * s, rw * s, rh * s));
+      paint("rgba(0,0,0,0.38)", null, (c, s) => {
+        c.lineWidth = Math.max(1, s * 0.004);
+        c.strokeRect(rx * s, ry * s, rw * s, rh * s);
+      });
+    }
+  }
+
+  // --- grime over everything ----------------------------------------------
+  blobNoise(ctx, rng, size, engine ? 20 : 30, [size * 0.03, size * 0.13], engine ? 0.2 : 0.3, "#1c2128");
+
+  const albedo = new THREE.CanvasTexture(element);
+  albedo.wrapS = THREE.RepeatWrapping;
+  albedo.wrapT = THREE.RepeatWrapping;
+  albedo.anisotropy = 8;
+  albedo.colorSpace = THREE.SRGBColorSpace;
+
+  const roughness = new THREE.CanvasTexture(roughElement);
+  roughness.wrapS = THREE.RepeatWrapping;
+  roughness.wrapT = THREE.RepeatWrapping;
+  roughness.anisotropy = 4;
+  roughness.colorSpace = THREE.NoColorSpace;
+
+  return { albedo, roughness };
+}
+
+/**
  * Builds every texture the city needs.
  *
  * `size` comes from the quality tier. Memory is (size² × 4 bytes × 1.33 for
@@ -751,23 +1125,64 @@ export function createCityTextures(size: number, seed: string): CityTextures {
 function buildCityTextures(size: number, seed: string): CityTextures {
   const facades: THREE.CanvasTexture[] = [];
   const facadeEmissives: THREE.CanvasTexture[] = [];
+  const facadeRoughs: THREE.CanvasTexture[] = [];
   for (let i = 0; i < FACADE_VARIANTS; i += 1) {
-    const [map, emissiveMap] = buildFacade(size, seed, i);
+    const [map, emissiveMap, roughnessMap] = buildFacade(size, seed, i);
     facades.push(map);
     facadeEmissives.push(emissiveMap);
+    facadeRoughs.push(roughnessMap);
   }
 
   const grime = buildGrime(Math.min(size, 512), seed);
   const { albedo: road, roughness: roadRough } = buildRoad(size, seed);
+  /*
+   * Half the facade edge length, and it scales with the tier.
+   *
+   * A floor tile covers eighteen metres against the road's forty-six, so half
+   * the pixels is still more resolution per metre than the street gets. The
+   * minimum is 128 rather than 256 because these have to come down with
+   * everything else: pinned at 256 they pushed the BALANCED and LOW sets past
+   * their stated ceilings, which is the sort of thing a budget exists to
+   * refuse.
+   */
+  const floorSize = Math.max(128, Math.round(size / 2));
+  const { albedo: engineFloor, roughness: engineFloorRough } = buildFloor(
+    floorSize,
+    seed,
+    "engine",
+  );
+  const { albedo: substrateFloor, roughness: substrateFloorRough } = buildFloor(
+    floorSize,
+    seed,
+    "substrate",
+  );
 
   return {
     facades,
     facadeEmissives,
+    facadeRoughs,
     grime,
     road,
     roadRough,
+    engineFloor,
+    engineFloorRough,
+    substrateFloor,
+    substrateFloorRough,
     dispose() {
-      for (const t of [...facades, ...facadeEmissives, grime, road, roadRough]) t.dispose();
+      for (const t of [
+        ...facades,
+        ...facadeEmissives,
+        ...facadeRoughs,
+        grime,
+        road,
+        roadRough,
+        engineFloor,
+        engineFloorRough,
+        substrateFloor,
+        substrateFloorRough,
+      ]) {
+        t.dispose();
+      }
     },
   };
 }
@@ -779,11 +1194,20 @@ function buildCityTextures(size: number, seed: string): CityTextures {
  * estimated in prose. Mipmaps add about a third on top of the base level.
  */
 export function textureMemoryMB(size: number): number {
-  const perMap = (size * size * 4 * 1.33) / 1048576;
-  const grimeSize = Math.min(size, 512);
+  const area = (edge: number) => (edge * edge * 4 * 1.33) / 1048576;
+  const perMap = area(size);
+  const floorSize = Math.max(128, Math.round(size / 2));
   return (
+    // Four facade variants: albedo and emissive at full size, roughness at
+    // half the edge length because it varies far more slowly than albedo.
     perMap * FACADE_VARIANTS * 2 +
-    (grimeSize * grimeSize * 4 * 1.33) / 1048576 +
-    perMap
+    area(Math.max(128, Math.round(size / 2))) * FACADE_VARIANTS +
+    // The shared grime map.
+    area(Math.min(size, 512)) +
+    // The road, and how rough it is.
+    perMap +
+    area(Math.max(128, Math.round(size / 2))) +
+    // Two deep floors, each with a roughness map at half again.
+    (area(floorSize) + area(Math.max(64, Math.round(floorSize / 2)))) * 2
   );
 }

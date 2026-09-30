@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { textureMemoryMB } from "@/components/environment/city/textures";
 import type { QualityTier } from "@/lib/capability";
 import { CITY_GEOMETRY, generateCity } from "@/lib/environment/generate";
 import { ENVIRONMENT_BUDGET, environmentBudget } from "@/lib/environment/quality";
@@ -277,33 +278,34 @@ describe("tiers differ by fidelity, not only by count", () => {
   });
 
   it("keeps generated texture memory inside a stated budget", () => {
-    // Four facade albedos, four emissive maps, a grime map, a road and the
-    // road's roughness map, plus mipmaps. The single largest GPU memory
-    // decision in the environment, and therefore a number worth knowing
-    // rather than discovering on a laptop.
-    //
-    // The ceilings below are unchanged by Phase 11. The roughness map is
-    // generated at half the road's edge length, which is a quarter of the
-    // pixels and about 0.35 MB at HIGH: roughness varies over metres rather
-    // than centimetres, so it is the map in the set least rewarded by
-    // resolution and the cheapest place to decline to spend it.
-    const megabytes = (size: number) => {
-      const per = (size * size * 4 * 1.33) / 1048576;
-      const grime = Math.min(size, 512);
-      const rough = Math.max(128, Math.round(size / 2));
-      return (
-        per * 4 * 2 +
-        (grime * grime * 4 * 1.33) / 1048576 +
-        per +
-        (rough * rough * 4 * 1.33) / 1048576
-      );
-    };
-    // Measured, not aspirational: about 13 MB at HIGH and 7.5 MB at BALANCED.
-    // The ceilings exist to catch the case this test already caught once —
-    // 1024px maps, which multiply out to 49 MB.
-    expect(megabytes(ENVIRONMENT_BUDGET.high.textureSize)).toBeLessThan(16);
-    expect(megabytes(ENVIRONMENT_BUDGET.balanced.textureSize)).toBeLessThan(9);
-    expect(megabytes(ENVIRONMENT_BUDGET.low.textureSize)).toBeLessThan(4);
+    /*
+     * Everything the city generates, plus mipmaps. The single largest GPU
+     * memory decision in the environment, and therefore a number worth
+     * knowing rather than discovering on a laptop.
+     *
+     * Asserted against `textureMemoryMB` itself rather than against a copy of
+     * its arithmetic, because a copy is what let this test go on passing
+     * through two additions it knew nothing about — the road's roughness map,
+     * and then four facade roughness maps which at full resolution put the
+     * set at 19.8 MB against a 16 MB ceiling.
+     *
+     * The ceilings below are the ones this test has always had. What changed
+     * to get back under them was the maps, not the budget: roughness varies
+     * far more slowly than albedo, so every roughness map in the set is
+     * generated at half the edge length of the thing it describes, and the
+     * deep floors scale with the tier instead of being pinned at 256.
+     */
+    expect(textureMemoryMB(ENVIRONMENT_BUDGET.high.textureSize)).toBeLessThan(16);
+    expect(textureMemoryMB(ENVIRONMENT_BUDGET.balanced.textureSize)).toBeLessThan(9);
+    expect(textureMemoryMB(ENVIRONMENT_BUDGET.low.textureSize)).toBeLessThan(4);
+
+    // And a cheaper tier may never cost more than a dearer one.
+    expect(textureMemoryMB(ENVIRONMENT_BUDGET.balanced.textureSize)).toBeLessThan(
+      textureMemoryMB(ENVIRONMENT_BUDGET.high.textureSize),
+    );
+    expect(textureMemoryMB(ENVIRONMENT_BUDGET.low.textureSize)).toBeLessThan(
+      textureMemoryMB(ENVIRONMENT_BUDGET.balanced.textureSize),
+    );
   });
 
   it("never lets a lower tier cost more than a higher one", () => {
