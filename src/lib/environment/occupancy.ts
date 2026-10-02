@@ -1,6 +1,11 @@
 import { LEVEL_ORDER } from "@/data/routes";
 import type { StratumId } from "@/data/types";
-import { CAMERA_EYE, EYE_ABOVE_FEET, cameraAnchorXZ, cameraBearing } from "./generate";
+import {
+  CAMERA_EYE,
+  EYE_ABOVE_FEET,
+  cameraAnchorXZ,
+  viewBearing,
+} from "./generate";
 import type { LevelEnvironment, LightSource, Part, Structure } from "./types";
 import { LAMP_REACH_SQ } from "./weather";
 
@@ -100,20 +105,6 @@ export const ZONE_BEHAVIOUR: Record<ZoneKind, { travel: number; dwell: number }>
 };
 
 /**
- * Which way the camera is actually looking.
- *
- * `cameraBearing` is where the camera *stands*, as a bearing from the middle
- * of the world, and the camera looks back across the middle rather than out
- * of it — so the direction it faces is half a turn from where it is. The
- * generator has said so in one line since the fixtures were written, and the
- * first draft of this file ignored it and placed every pedestrian crossing
- * directly behind the lens. Measuring found it; reading would have.
- */
-function viewDirection(level: StratumId): number {
-  return cameraBearing(LEVEL_ORDER.indexOf(level)) + Math.PI;
-}
-
-/**
  * How far off the camera's sight line a zone may be and still be authored.
  *
  * The lesson the foreground set learned the expensive way, applied before it
@@ -190,6 +181,28 @@ export const LEVEL_OCCUPANCY: Record<StratumId, number> = {
   engine: 0.42,
   substrate: 0.14,
 };
+
+/**
+ * Where in a platform figure's cycle they step towards the train.
+ *
+ * The cycle is walk on, wait, walk to the edge and be gone, and with a dwell
+ * of 0.52 the last of those begins at 0.76. Named because the timetable has
+ * to agree with it: a commuter who boards at 0.76 of their cycle has to reach
+ * 0.76 at the moment a train is at the platform, or they are walking into the
+ * side of one.
+ */
+export const BOARD_AT = 0.76;
+
+/**
+ * How far apart two commuters step, as a fraction of the cycle.
+ *
+ * Enough that a platform empties over about three seconds rather than in one
+ * frame, and enough that no two people share a phase — which an earlier test
+ * already required, for the chorus-line reason. A queue boarding a train is
+ * the one place in this world where synchronised movement is correct, and
+ * even there it is ragged.
+ */
+export const BOARD_STAGGER = 0.012;
 
 /** One authored place where people are, and what they are doing there. */
 export interface Zone {
@@ -277,6 +290,21 @@ function lamps(band: LevelEnvironment): Fixture[] {
  * chest rather than the feet, because that is the part of a figure a reader
  * is looking at.
  */
+function brightnessAt(
+  fixtures: readonly Fixture[],
+  x: number,
+  y: number,
+  z: number,
+): number {
+  let total = 0;
+  for (const l of fixtures) {
+    const d2 = (l.x - x) ** 2 + (l.y - y) ** 2 + (l.z - z) ** 2;
+    if (d2 > LAMP_REACH_SQ * 6) continue;
+    total += l.emissive / (1 + d2 * 0.006);
+  }
+  return total;
+}
+
 function litBy(fixtures: readonly Fixture[], x: number, y: number, z: number) {
   let best: LightSource | null = null;
   let score = 0;
@@ -349,7 +377,7 @@ function platformZone(band: LevelEnvironment): Zone | null {
  */
 function crossingZones(level: StratumId, surface: number): Zone[] {
   const [cx, cz] = cameraAnchorXZ(LEVEL_ORDER.indexOf(level));
-  const look = viewDirection(level);
+  const look = viewBearing(level);
   // Two lines across the sight line: one in the near ground where a figure is
   // a real silhouette, one further out where they are part of the street.
   return [26, 52].map((ahead) => ({
@@ -379,24 +407,47 @@ function crossingZones(level: StratumId, surface: number): Zone[] {
  * statement available that people work up here.
  */
 function bridgeZones(band: LevelEnvironment): Zone[] {
-  const out: Zone[] = [];
+  const fixtures = lamps(band);
+  const found: { zone: Zone; lit: number }[] = [];
   for (const st of band.structures) {
     for (const p of st.parts) {
       if (p.kind !== "bridge") continue;
       // Long enough to walk along, and a deck rather than a canopy fin.
       if (p.size[0] < 16) continue;
       if (p.position[1] - band.floor < 20) continue;
-      out.push({
-        kind: "crossing",
-        x: p.position[0],
-        y: p.position[1] + p.size[1] / 2,
-        z: p.position[2],
-        bearing: -p.rotation,
-        spread: 0.9,
+      const y = p.position[1] + p.size[1] / 2;
+      found.push({
+        zone: {
+          kind: "crossing",
+          x: p.position[0],
+          y,
+          z: p.position[2],
+          bearing: -p.rotation,
+          spread: 0.9,
+        },
+        lit: brightnessAt(fixtures, p.position[0], y + 1.1, p.position[2]),
       });
     }
   }
-  return out;
+
+  /*
+   * The lit ones first, which is the whole of this phase's answer for the
+   * interface.
+   *
+   * A figure is read as a shape against a background, so the brief's
+   * instruction — better framing rather than more people — comes down to
+   * putting the shapes somewhere there is something to be a shape against.
+   * Ranking the candidate bridges by how much light is on them and keeping
+   * the best two costs nothing and changes what a silhouette is standing in
+   * front of, which is the only thing that was ever wrong with it.
+   *
+   * Two, not five. A group of people on one bridge reads as people; the same
+   * number spread over five bridges reads as specks.
+   */
+  return found
+    .sort((a, b) => b.lit - a.lit)
+    .slice(0, 2)
+    .map((f) => f.zone);
 }
 
 /**
@@ -454,7 +505,7 @@ function tracksideZones(band: LevelEnvironment): Zone[] {
  */
 function foregroundService(level: StratumId, surface: number): Zone[] {
   const [cx, cz] = cameraAnchorXZ(LEVEL_ORDER.indexOf(level));
-  const look = viewDirection(level);
+  const look = viewBearing(level);
   const across = look + Math.PI / 2;
   return [
     { ahead: 15, lateral: -7.5 },
@@ -600,7 +651,7 @@ export function zonesFor(band: LevelEnvironment, level: StratumId): Zone[] {
   // Only what the camera can see. Everything else is budget spent behind the
   // lens, which is how half of an earlier foreground pass came to be invisible.
   const [cx, cz] = cameraAnchorXZ(LEVEL_ORDER.indexOf(level));
-  const look = viewDirection(level);
+  const look = viewBearing(level);
   const seen = out
     .map((z) => ({ z, range: Math.hypot(z.x - cx, z.z - cz) }))
     .filter(({ z, range }) => {
@@ -676,12 +727,33 @@ export function allocate(zones: readonly Zone[], budget: number, keep: number): 
  * small integer sequence across the unit interval without ever repeating,
  * which is what stops six commuters from sharing one phase and stepping
  * forward together like a chorus line.
+ *
+ * THE ONE EXCEPTION, AND WHY IT IS THE POINT
+ *
+ * People on a platform run on the timetable instead. Their cycle is set to
+ * the service interval and their boarding phase to the moment a train is at
+ * the platform, so the queue steps forward as one arrives and the platform is
+ * empty while it dwells.
+ *
+ * That is the difference between a station with people near it and a station
+ * being used, and it costs two numbers. Phase 13 put commuters on a platform
+ * and the trains went past them on an unrelated clock; a reader could watch
+ * for a minute and never see the two facts connect. Nothing new is drawn
+ * here — the figures and the train were both already on screen, and all that
+ * changed is that they now agree about what time it is.
  */
 export function occupants(
   band: LevelEnvironment,
   level: StratumId,
   budget: number,
   keep: number,
+  /**
+   * Seconds between trains, or zero where nothing is running.
+   *
+   * Zero leaves everyone on their own independent cycle, which is what a
+   * level with no service should look like.
+   */
+  arrival = 0,
 ): Figure[] {
   const zones = zonesFor(band, level);
   const share = allocate(zones, levelBudget(level, budget), keep);
@@ -691,6 +763,8 @@ export function occupants(
   let n = 0;
   for (const [zone, count] of share) {
     const behaviour = ZONE_BEHAVIOUR[zone.kind];
+    // Only the platform runs to a timetable, and only when one is running.
+    const onTimetable = zone.kind === "platform" && arrival > 0;
     for (let i = 0; i < count; i += 1, n += 1) {
       // Across the path, so a cluster is a cluster and not a queue.
       const lateral = ((n * 0.6180339887) % 1 - 0.5) * 2 * zone.spread;
@@ -707,10 +781,25 @@ export function occupants(
         bearing: zone.bearing + ((n * 0.3247179572) % 1 - 0.5) * 0.5,
         travel: behaviour.travel * (0.8 + ((n * 0.5698402909) % 1) * 0.45),
         dwell: behaviour.dwell,
-        // Cycles per second. Slow: a whole cycle is an arrival, a wait and a
-        // departure, and those take the better part of a minute.
-        rate: 0.018 + ((n * 0.7548776662) % 1) * 0.022,
-        phase: (n * 0.4142135624) % 1,
+        /*
+         * Cycles per second, and for most people it is their own.
+         *
+         * Slow, because a whole cycle is an arrival, a wait and a departure,
+         * and those take the better part of a minute. A commuter's cycle is
+         * the service interval instead, and their phase is set so the walk to
+         * the platform edge lands on an arrival.
+         */
+        ...(onTimetable
+          ? {
+              rate: 1 / arrival,
+              // Backwards from the moment a train is there, and staggered, so
+              // the queue steps forward raggedly rather than as a rank.
+              phase: (((BOARD_AT - i * BOARD_STAGGER) % 1) + 1) % 1,
+            }
+          : {
+              rate: 0.018 + ((n * 0.7548776662) % 1) * 0.022,
+              phase: (n * 0.4142135624) % 1,
+            }),
         height:
           FIGURE_MIN_HEIGHT +
           ((n * 0.2360679775) % 1) * (FIGURE_MAX_HEIGHT - FIGURE_MIN_HEIGHT),

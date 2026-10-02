@@ -483,6 +483,7 @@ function Rain({
  */
 const ACCENT_VERTEX = /* glsl */ `
   uniform float uTime;
+  uniform float uArrival;
   attribute vec3 aTint;
   attribute float aPhase;
   attribute float aMode;
@@ -497,7 +498,24 @@ const ACCENT_VERTEX = /* glsl */ `
     float t = uTime + aPhase;
     float level = 1.0;
 
-    if (aMode > 2.5) {
+    if (aMode > 3.5) {
+      /*
+       * Platform state, on the service interval rather than on a period of
+       * its own.
+       *
+       * The train brakes to a twelfth of line speed exactly at the station,
+       * once every uArrival seconds, so that is when this comes up. Standby
+       * between services, a quick rise as one arrives, full while it is
+       * alongside, and back down as it goes.
+       *
+       * uArrival is zero where no service is running, which leaves the
+       * platform on standby rather than dividing by nothing.
+       */
+      float cycle = uArrival > 0.0 ? fract(uTime / uArrival) : 0.5;
+      float arrive = smoothstep(0.90, 0.99, cycle);
+      float leave = 1.0 - smoothstep(0.08, 0.22, cycle);
+      level = 0.34 + 0.66 * max(arrive, leave);
+    } else if (aMode > 2.5) {
       // Blink. A hazard light is on for a short part of its period, which is
       // what separates a beacon from a pulsing decoration.
       float period = 2.6;
@@ -550,10 +568,13 @@ const ACCENT_FRAGMENT = /* glsl */ `
 function Accents({
   city,
   palette,
+  arrival,
   paused,
 }: {
   city: City;
   palette: Palette;
+  /** Seconds between trains, which is what the platform's lights are saying. */
+  arrival: number;
   paused: React.RefObject<boolean>;
 }) {
   const material = useRef<THREE.ShaderMaterial>(null);
@@ -573,6 +594,7 @@ function Accents({
       breathe: 1,
       flicker: 2,
       blink: 3,
+      service: 4,
     };
 
     const colour = new THREE.Color();
@@ -621,8 +643,12 @@ function Accents({
     g.setIndex(index);
     g.computeBoundingSphere();
 
-    return { geometry: g, uniforms: { uTime: { value: 0 } }, count: n };
-  }, [city, palette]);
+    return {
+      geometry: g,
+      uniforms: { uTime: { value: 0 }, uArrival: { value: arrival } },
+      count: n,
+    };
+  }, [city, palette, arrival]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 

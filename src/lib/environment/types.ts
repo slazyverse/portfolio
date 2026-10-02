@@ -197,7 +197,16 @@ export type LightBehaviour =
   /** An unreliable fixture. Occasional dropouts, never rhythmic. */
   | "flicker"
   /** A beacon or a hazard light. Hard on, hard off, on its own period. */
-  | "blink";
+  | "blink"
+  /**
+   * Platform state. On the service interval rather than on a period of its
+   * own, so it says the same thing the train is doing.
+   *
+   * The only behaviour in this list that is a fact about the world instead of
+   * a fact about a fixture: a departure indicator is not a light that happens
+   * to pulse, it is a light that means a train is here.
+   */
+  | "service";
 
 /**
  * One lit cell — a window, a panel indicator, a status LED.

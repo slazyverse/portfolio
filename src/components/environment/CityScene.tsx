@@ -16,7 +16,8 @@ import {
   type EntryBeat,
   type EntryLength,
 } from "@/lib/environment/entry";
-import { generateCity } from "@/lib/environment/generate";
+import { generateCity, viewBearing } from "@/lib/environment/generate";
+import { arrivalInterval } from "@/lib/environment/transit";
 import { environmentBudget } from "@/lib/environment/quality";
 import type { City, LevelEnvironment } from "@/lib/environment/types";
 import { KitPieces, Masses } from "./city/Buildings";
@@ -512,7 +513,12 @@ function Scene({
 
       <Masses city={city} textures={textures} />
       <KitPieces city={city} routeId={routeId} palette={palette} textures={textures} />
-      <Accents city={city} palette={palette} paused={paused} />
+      <Accents
+        city={city}
+        palette={palette}
+        arrival={arrivalInterval(budget.traffic)}
+        paused={paused}
+      />
       <Conduits city={city} palette={palette} />
 
       {rains && (
@@ -525,7 +531,12 @@ function Scene({
         />
       )}
       {motion && budget.traffic > 0 && (
-        <Traffic count={budget.traffic} floor={band.floor} paused={paused} />
+        <Traffic
+          count={budget.traffic}
+          floor={band.floor}
+          look={viewBearing(level)}
+          paused={paused}
+        />
       )}
       {motion && budget.steam > 0 && (
         <Steam
@@ -551,6 +562,7 @@ function Scene({
           level={level}
           count={budget.figures}
           keep={budget.zoneKeep}
+          arrival={arrivalInterval(budget.traffic)}
           palette={palette}
           paused={paused}
         />

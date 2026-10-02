@@ -192,7 +192,37 @@ export const TRANSIT = {
   height: 34,
   /** Deck width, in metres. Two tracks and a walkway. */
   deck: 7.5,
+  /**
+   * Trains on the line at once, at the top tier.
+   *
+   * Measured before it was chosen, because the number it replaces was an
+   * accident. The elevated lane took every fifth vehicle out of the traffic
+   * budget, which at the top tier was **sixty-eight** of them on a seven
+   * hundred and forty metre ring: one every eleven metres, each eleven to
+   * seventeen metres long. That is not a service, it is a continuous chain of
+   * light that happens to be shaped like carriages.
+   *
+   * Four, evenly spaced, is a line. Everything the budget stops spending here
+   * goes to the street instead, so the vertex count does not move.
+   */
+  services: 4,
+  /**
+   * Seconds for one circuit of the line.
+   *
+   * Which sets the service interval, since the trains are evenly spaced:
+   * seventy-two over four is an arrival every eighteen seconds, so a reader
+   * who stops to look at the station sees one without waiting for it.
+   *
+   * It also fixes the line speed at ten metres a second — thirty-seven an
+   * hour, which is urban transit. The lane it replaces ran at eight to
+   * nineteen kilometres an hour, somewhere between a brisk walk and a slow
+   * bicycle, and took between two and six minutes to get round.
+   */
+  period: 72,
 } as const;
+
+/** Seconds between arrivals at the platform. */
+export const TRANSIT_INTERVAL = TRANSIT.period / TRANSIT.services;
 
 /**
  * Where the camera stands horizontally at a given level.
@@ -209,6 +239,24 @@ export function cameraAnchorXZ(index: number): readonly [number, number] {
 /** The direction the camera looks at a given level, as a bearing in radians. */
 export function cameraBearing(index: number): number {
   return (index / 4) * Math.PI * 2 * 0.62;
+}
+
+/**
+ * Which way a level's camera is actually facing.
+ *
+ * `cameraBearing` is where the camera *stands*, as a bearing from the middle
+ * of the world, and it looks back across the middle rather than out of it —
+ * so the direction it faces is half a turn from where it is. Stated once
+ * here because it had accumulated four copies, one of which was wrong: an
+ * earlier pass took the standing bearing for the facing one and placed every
+ * pedestrian crossing in the city directly behind the lens.
+ *
+ * Everything composed against the shot reads it from here: the anchors, the
+ * foreground set, the transit spine, the people, and the trains that stop for
+ * them.
+ */
+export function viewBearing(level: StratumId): number {
+  return cameraBearing(LEVEL_ORDER.indexOf(level)) + Math.PI;
 }
 
 /** How the four levels differ. The only place level character is defined. */
@@ -777,9 +825,9 @@ export function anchorPlacement(
 
 function anchorsFor(level: StratumId): EnvironmentAnchor[] {
   const floor = levelFloor(level);
-  // The direction this level's camera faces — across the shaft, away from
-  // where it stands. Anchors are placed relative to it so they are in shot.
-  const look = cameraBearing(LEVEL_ORDER.indexOf(level)) + Math.PI;
+  // Anchors are placed relative to the way the camera faces, so they are in
+  // shot.
+  const look = viewBearing(level);
   return ANCHOR_SPECS.filter((spec) => route(spec.routeId).level === level).map(
     (spec) => {
       const position = anchorPlacement(spec, floor, look);
@@ -1761,7 +1809,7 @@ function generateLevel(
   const camera = cameraAnchorXZ(index);
   // The camera looks across the shaft, so the clear cone points back through
   // the origin.
-  const look = cameraBearing(index) + Math.PI;
+  const look = viewBearing(level);
   // The landmarks for this level, resolved before anything procedural is
   // placed — they are authored, so they have first claim on the ground.
   const landmarks = ANCHOR_SPECS.filter(
@@ -1889,6 +1937,11 @@ function generateLevel(
   // skyline can make that the city is operating rather than modelled.
   beaconLights(rng, structures, lights);
 
+  // And the station says what it is doing, on the levels that have one. Also
+  // exempt, also for the beacon's reason: a departure indicator with two of
+  // its cells thinned away is not a dimmer signal, it is a broken one.
+  if (FIXTURES[level].transit) stationLights(floor, look, lights);
+
   // Last, because it consumes no randomness and must not disturb anything
   // that does — the lighting quota above is arithmetic over these structures.
   signUnmarkedOwners(structures);
@@ -1949,6 +2002,92 @@ function thinLights(items: readonly LightCell[], keep: number): LightCell[] {
   const fixed = items.filter((l) => l.fixed);
   const rest = items.filter((l) => !l.fixed);
   return [...thin(rest, Math.max(0, keep - fixed.length)), ...fixed];
+}
+
+/**
+ * The station, saying what it is doing.
+ *
+ * Six cells on the platform that run on the service interval rather than on a
+ * period of their own: the edge lighting comes up as a train arrives, holds
+ * while it dwells, and drops back to standby once it has gone. Whether that
+ * reads as doors or as a signal is left to the reader — a lit strip at a
+ * platform edge changing state at the moment a carriage is alongside is
+ * enough, and anything more literal at this distance would be a modelled door
+ * nobody can see.
+ *
+ * SIX, AND WHY NOT MORE
+ *
+ * This started at nine and failed an existing guard: the city is not allowed
+ * to animate more than a fifth of its lights, and it was already at 18.9% —
+ * so the station had about thirteen cells of headroom in the entire world and
+ * the first draft spent eighteen of them. The guard is right and the draft was
+ * wrong. A city where every light pulses is a screensaver, and a departure
+ * indicator only means something because almost nothing else moves.
+ *
+ * What went was the far side of the platform, which the camera never sees:
+ * the station sits across the shaft at the bearing the camera faces, so only
+ * the near edge is ever in shot. Three cells along that edge, one departure
+ * indicator at the escalator head, and two where the core meets the street.
+ *
+ * Exempt from the light quota for the same reason a beacon is — thinning
+ * keeps every nth cell, which is correct for a facade and nonsense for a
+ * signal.
+ *
+ * Note the argument this makes for the whole phase. Nothing new is drawn: the
+ * platform, the train and the people on it were all already on screen. What
+ * changed is that they now agree about what time it is.
+ */
+function stationLights(floor: number, look: number, out: LightCell[]): void {
+  const { radius, height } = TRANSIT;
+  const y = floor + height;
+  const sx = Math.cos(look) * radius;
+  const sz = Math.sin(look) * radius;
+  const yaw = -(look + Math.PI / 2);
+  const along = (t: number, o: number): readonly [number, number] => [
+    sx + Math.cos(look + Math.PI / 2) * t + Math.cos(look) * o,
+    sz + Math.sin(look + Math.PI / 2) * t + Math.sin(look) * o,
+  ];
+  /*
+   * No offset into the cycle, on any of them.
+   *
+   * Every cell on a platform states the same fact at the same moment, which
+   * is exactly what separates a signal from a decoration — the rest of the
+   * city's lights are scattered in phase on purpose, and these are not.
+   */
+  const cell = (
+    position: readonly [number, number, number],
+    signal: "cold" | "amber",
+    source: LightSource,
+    intensity: number,
+    size: number,
+  ): LightCell => ({
+    position,
+    rotation: yaw,
+    signal,
+    source,
+    behaviour: "service",
+    phase: 0,
+    intensity,
+    size,
+    fixed: true,
+  });
+
+  // The near edge: the strip that says where the train stops. Negative
+  // offsets are towards the middle of the world, which is where the camera is.
+  for (let i = -1; i <= 1; i += 1) {
+    const [x, z] = along(i * 11, -7.6);
+    out.push(cell([x, y + 1.5, z], "cold", "machine", 0.85, 1.6));
+  }
+
+  // The departure indicator, over the escalator head where the passengers are.
+  const [ix, iz] = along(-20, -8.2);
+  out.push(cell([ix, y + 6.4, iz], "amber", "sodium", 1, 2.2));
+
+  // And a pair at the foot of the core, where the street meets the station.
+  for (const side of [-1, 1]) {
+    const [x, z] = along(20 + side * 3, -4.8);
+    out.push(cell([x, floor + 4.2, z], "amber", "sodium", 0.8, 1.4));
+  }
 }
 
 /** This level's hard ceiling on lit cells. */

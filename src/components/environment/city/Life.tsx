@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { StratumId } from "@/data/types";
-import { CITY_GEOMETRY, TRANSIT } from "@/lib/environment/generate";
+import { CITY_GEOMETRY } from "@/lib/environment/generate";
+import { fleet } from "@/lib/environment/transit";
 import { occupants } from "@/lib/environment/occupancy";
 import type {
   City,
@@ -33,26 +34,43 @@ import { lightSourceColour, type Palette } from "./palette";
 const TRAFFIC_VERTEX = /* glsl */ `
   uniform float uTime;
   attribute float aRadius;
-  attribute float aSpeed;
-  attribute float aPhase;
+  attribute float aRate;
+  attribute float aAnchor;
+  attribute float aOffset;
+  attribute float aBrake;
+  attribute float aBrakeMul;
+  attribute float aSweep;
   attribute float aHeight;
-  attribute float aSway;
-  attribute float aSwayRate;
   attribute vec3 aTint;
   attribute vec2 aCorner;
   varying vec3 vTint;
   varying float vFade;
 
   void main() {
-    // A vehicle is an angle and a radius. One uniform changes per frame, and
-    // no position is ever uploaded.
-    //
-    // The sine term is not a wobble — it is added to *position*, so what it
-    // modulates is speed. Traffic bunches and opens out; a train slows to
-    // almost nothing on its own period, which is what arriving at a platform
-    // looks like from across a city. The amplitude is chosen against the rate
-    // so the derivative never crosses zero: nothing here ever reverses.
-    float angle = aPhase + uTime * aSpeed + aSway * sin(uTime * aSwayRate + aPhase * 3.1);
+    /*
+     * A vehicle is an angle and a radius. One uniform changes per frame, and
+     * no position is ever uploaded.
+     *
+     * The slowdown is anchored to a *place* rather than to a clock, which is
+     * the whole of what this phase changed about transit. Before, the brake
+     * was a free sine on its own fixed period, so a train decelerated every
+     * thirty-nine seconds having travelled somewhere between a ninth and a
+     * quarter of the way round — it stopped constantly and never at the
+     * station it was passing.
+     *
+     * Written as u minus a sine *of u*, the minimum of the derivative is at
+     * u = 0 by construction, and at u = 0 the offset from the anchor is also
+     * zero. So the vehicle is slowest exactly where the anchor is, every
+     * circuit, with no phase to solve for. Set the anchor to the station
+     * bearing and the train arrives, slows, dwells and departs because the
+     * arithmetic cannot do anything else.
+     *
+     * It never reverses as long as aBrake * aBrakeMul stays under one, which
+     * is asserted rather than assumed.
+     */
+    float u = uTime * aRate + aOffset;
+    float travel = u - aBrake * sin(u * aBrakeMul);
+    float angle = aAnchor + travel;
     vec3 centre = vec3(cos(angle) * aRadius, aHeight, sin(angle) * aRadius);
 
     // Elongate the streak along the direction of travel, in view space, so it
@@ -66,9 +84,23 @@ const TRAFFIC_VERTEX = /* glsl */ `
 
     // Distant traffic dissolves into the haze instead of staying pin-sharp,
     // which is what stops a ring of lights reading as a ring of lights.
-    // Dimmer overall and falling off faster: these are points of light in a
-    // dark street, and additive blending is unforgiving of generosity.
     vFade = (1.0 - clamp(-mv.z / 300.0, 0.0, 0.95)) * 0.55;
+
+    /*
+     * And a train is only drawn where there is track under it.
+     *
+     * The guideway is a sweep of about ninety degrees centred on the station,
+     * not a closed loop — the ring is how the vehicle is *computed*, not
+     * something the world contains. Fading a train out past the end of the
+     * viaduct costs one smoothstep and buys the thing the loop cannot give:
+     * a service that comes in from one end, stops, and leaves by the other.
+     *
+     * Street traffic passes a sweep wider than a circle, so this is free for
+     * everything that is not on a viaduct.
+     */
+    float off = mod(travel + 3.14159265, 6.28318531) - 3.14159265;
+    vFade *= 1.0 - smoothstep(aSweep * 0.82, aSweep, abs(off));
+
     vTint = aTint;
     gl_Position = projectionMatrix * mv;
   }
@@ -83,144 +115,89 @@ const TRAFFIC_FRAGMENT = /* glsl */ `
 `;
 
 /**
- * Traffic, as moving light.
+ * Traffic, transit and service vehicles.
  *
  * Every vehicle is two triangles whose position is a function of time, so the
  * whole system is one draw call and one uniform write per frame. Nothing is
  * simulated because nothing needs to be — at this distance a vehicle *is* a
  * moving light.
  *
- * Lanes run both ways at several radii and heights: traffic on the street,
- * transit on the guideway above it. The colours are lamps rather than palette
- * tokens — white towards you, red away, cool white for a lit carriage — which
- * is why this component takes no palette at all.
+ * The arithmetic that decides what is moving and where it slows down lives in
+ * `lib/environment/transit.ts`, which imports no rendering library, so the
+ * claim that a train stops at the station is asserted in Node rather than
+ * eyeballed in a screenshot. This component keeps the buffers and the shader.
  */
 export function Traffic({
   count,
   floor,
+  look,
   paused,
 }: {
   count: number;
   floor: number;
+  /** The bearing of this level's station: where a train stops. */
+  look: number;
   paused: React.RefObject<boolean>;
 }) {
   const material = useRef<THREE.ShaderMaterial>(null);
 
   const { geometry, uniforms } = useMemo(() => {
-    const position = new Float32Array(count * 4 * 3);
-    const corner = new Float32Array(count * 4 * 2);
-    const radius = new Float32Array(count * 4);
-    const speed = new Float32Array(count * 4);
-    const phase = new Float32Array(count * 4);
-    const height = new Float32Array(count * 4);
-    const sway = new Float32Array(count * 4);
-    const swayRate = new Float32Array(count * 4);
-    const tint = new Float32Array(count * 4 * 3);
+    const vehicles = fleet(count, floor, look);
+    const n = vehicles.length;
+
+    const position = new Float32Array(n * 4 * 3);
+    const corner = new Float32Array(n * 4 * 2);
+    const radius = new Float32Array(n * 4);
+    const rate = new Float32Array(n * 4);
+    const anchor = new Float32Array(n * 4);
+    const offset = new Float32Array(n * 4);
+    const brake = new Float32Array(n * 4);
+    const brakeMul = new Float32Array(n * 4);
+    const sweep = new Float32Array(n * 4);
+    const height = new Float32Array(n * 4);
+    const tint = new Float32Array(n * 4 * 3);
     const index: number[] = [];
+    const colour = new THREE.Color();
 
-    /*
-     * Headlights and tail lights, not palette colours.
-     *
-     * This ran `--accent` one way and `--cold` the other, which kept the
-     * signal semantics tidy and was wrong about traffic: a vehicle coming
-     * towards you shows white and one going away shows red, and that single
-     * fact is most of what makes a moving light read as a car rather than as
-     * a decoration travelling along a line. It also puts the only red in the
-     * street, at the only scale where red belongs there.
-     *
-     * The transit lane is different again — a train is lit by its own
-     * windows, so it is a long cool-white body rather than a pair of lamps.
-     */
-    const head = new THREE.Color("#fff0d6");
-    const tail = new THREE.Color("#ff2f22");
-    const carriage = new THREE.Color("#cfe4f2");
-
-    for (let i = 0; i < count; i += 1) {
-      // Deterministic lanes, derived from the index — the traffic is as
-      // reproducible as the city it moves through.
-      // Five lanes: four at street level, one elevated. The first pass ran
-      // three elevated lanes with streaks up to eleven metres long, and
-      // additive blending turned them into glowing planks hanging in the air
-      // — a vehicle is a small bright thing, not a bar.
-      const lane = i % 5;
-      const street = lane < 4;
-      /*
-       * The elevated lane runs on the guideway, not near it.
-       *
-       * Previously this was a radius and a height picked to look about right,
-       * and the result was the weakness the review named: a line of lights in
-       * the air with no structure under it. Both numbers now come from
-       * `TRANSIT`, which is also what the generator builds the deck, the
-       * columns and the station from — so the vehicles are on the track by
-       * construction rather than by coincidence.
-       */
-      const r = street
-        ? CITY_GEOMETRY.VOID_RADIUS + 18 + lane * 21 + ((i * 0.618) % 1) * 12
-        : TRANSIT.radius + (((i * 0.618) % 1) - 0.5) * (TRANSIT.deck * 0.5);
-      const y = floor + (street ? 1.4 + lane * 0.7 : TRANSIT.height + 2.4);
-      const direction = lane % 2 === 0 ? 1 : -1;
-      const sp = direction * (0.03 + ((i * 0.3247) % 1) * 0.045) * (street ? 1 : 0.6);
-      const ph = (i * 2.399963) % (Math.PI * 2);
-      // A train is a carriage, not a car. Long enough to read as one object
-      // at range, and slow enough that the eye follows it rather than losing
-      // it — which is the difference between "transit exists" and "transit
-      // runs".
-      const length = street ? 1.1 + ((i * 0.754) % 1) * 1.4 : 5.5 + ((i * 0.569) % 1) * 3;
-      const thickness = street ? 0.3 : 0.5;
-      const colour = street ? (direction > 0 ? head : tail) : carriage;
-
-      /*
-       * How much this vehicle's speed varies, and how often.
-       *
-       * The amplitude is derived from the speed and the rate rather than
-       * picked, because the constraint is arithmetic: the speed term is
-       * `aSpeed + aSway * aSwayRate * cos(...)`, so as long as
-       * `|aSway * aSwayRate|` stays under `|aSpeed|` the vehicle slows without
-       * ever running backwards.
-       *
-       * Street traffic keeps a wide margin and just bunches. A train takes it
-       * to 0.92, which means it decelerates to roughly a twelfth of cruise and
-       * holds there briefly — a stop, without a station timetable to simulate.
-       */
-      const swayRateHz = street ? 0.22 + ((i * 0.431) % 1) * 0.26 : 0.16;
-      const margin = street ? 0.45 + ((i * 0.911) % 1) * 0.3 : 0.92;
-      const swayAmount = (sp / swayRateHz) * margin;
-
+    vehicles.forEach((v, i) => {
+      colour.set(v.colour);
       const corners: readonly (readonly [number, number])[] = [
-        [-length, -thickness],
-        [length, -thickness],
-        [length, thickness],
-        [-length, thickness],
+        [-v.length, -v.thickness],
+        [v.length, -v.thickness],
+        [v.length, v.thickness],
+        [-v.length, v.thickness],
       ];
-
-      for (let v = 0; v < 4; v += 1) {
-        const k = i * 4 + v;
-        corner[k * 2] = corners[v]![0];
-        corner[k * 2 + 1] = corners[v]![1];
-        radius[k] = r;
-        speed[k] = sp;
-        phase[k] = ph;
-        height[k] = y;
-        sway[k] = swayAmount;
-        swayRate[k] = swayRateHz;
+      for (let c = 0; c < 4; c += 1) {
+        const k = i * 4 + c;
+        corner[k * 2] = corners[c]![0];
+        corner[k * 2 + 1] = corners[c]![1];
+        radius[k] = v.radius;
+        rate[k] = v.rate;
+        anchor[k] = v.anchor;
+        offset[k] = v.offset;
+        brake[k] = v.brake;
+        brakeMul[k] = v.brakeMul;
+        sweep[k] = v.sweep;
+        height[k] = v.height;
         tint[k * 3] = colour.r;
         tint[k * 3 + 1] = colour.g;
         tint[k * 3 + 2] = colour.b;
       }
-
       const base = i * 4;
       index.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    }
+    });
 
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(position, 3));
     g.setAttribute("aCorner", new THREE.BufferAttribute(corner, 2));
     g.setAttribute("aRadius", new THREE.BufferAttribute(radius, 1));
-    g.setAttribute("aSpeed", new THREE.BufferAttribute(speed, 1));
-    g.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
+    g.setAttribute("aRate", new THREE.BufferAttribute(rate, 1));
+    g.setAttribute("aAnchor", new THREE.BufferAttribute(anchor, 1));
+    g.setAttribute("aOffset", new THREE.BufferAttribute(offset, 1));
+    g.setAttribute("aBrake", new THREE.BufferAttribute(brake, 1));
+    g.setAttribute("aBrakeMul", new THREE.BufferAttribute(brakeMul, 1));
+    g.setAttribute("aSweep", new THREE.BufferAttribute(sweep, 1));
     g.setAttribute("aHeight", new THREE.BufferAttribute(height, 1));
-    g.setAttribute("aSway", new THREE.BufferAttribute(sway, 1));
-    g.setAttribute("aSwayRate", new THREE.BufferAttribute(swayRate, 1));
     g.setAttribute("aTint", new THREE.BufferAttribute(tint, 3));
     g.setIndex(index);
     g.boundingSphere = new THREE.Sphere(
@@ -231,7 +208,7 @@ export function Traffic({
     return { geometry: g, uniforms: { uTime: { value: 0 } } };
   // No palette dependency: traffic is lit by its own lamps, and headlights
   // are not a design token.
-  }, [count, floor]);
+  }, [count, floor, look]);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -782,6 +759,7 @@ export function Figures({
   level,
   count,
   keep,
+  arrival,
   palette,
   paused,
 }: {
@@ -791,13 +769,15 @@ export function Figures({
   count: number;
   /** What fraction of the level activity zones this tier keeps. */
   keep: number;
+  /** Seconds between trains, so the queue boards one rather than ignoring it. */
+  arrival: number;
   palette: Palette;
   paused: React.RefObject<boolean>;
 }) {
   const material = useRef<THREE.ShaderMaterial>(null);
 
   const built = useMemo(() => {
-    const people = occupants(band, level, count, keep);
+    const people = occupants(band, level, count, keep, arrival);
     if (people.length === 0) return null;
 
     const position = new Float32Array(people.length * 4 * 3);
@@ -900,7 +880,7 @@ export function Figures({
     );
 
     return { geometry: g, uniforms: { uTime: { value: 0 } } };
-  }, [band, level, count, keep, palette]);
+  }, [band, level, count, keep, arrival, palette]);
 
   useEffect(() => {
     const g = built?.geometry;

@@ -35,7 +35,13 @@ const SOURCES: LightSource[] = [
   "subject",
 ];
 
-const BEHAVIOURS: LightBehaviour[] = ["steady", "breathe", "flicker", "blink"];
+const BEHAVIOURS: LightBehaviour[] = [
+  "steady",
+  "breathe",
+  "flicker",
+  "blink",
+  "service",
+];
 
 describe("the city is lit by fixtures, not by two tokens", () => {
   const city = generateCity("high");
@@ -98,9 +104,28 @@ describe("motion is the exception, not the rule", () => {
   });
 
   it("puts obstruction beacons on the tallest structures and nowhere else", () => {
+    /*
+     * This read `fixed` as "is a beacon", which was true for as long as a
+     * beacon was the only thing exempt from the light quota. A station's
+     * departure signal is exempt too, and for the same reason — thinning
+     * keeps every nth cell, which is right for a facade and nonsense for
+     * anything whose meaning depends on all of it being there — so the test
+     * now says what it actually means.
+     *
+     * Stronger than it was: it still catches a beacon that has lost a face,
+     * and it additionally refuses any third class of exempt cell, so nobody
+     * can quietly make something immune to the quota without saying so here.
+     */
     const city = generateCity("high");
     for (const level of city.levels) {
-      const beacons = level.lights.filter((l) => l.fixed);
+      const exempt = level.lights.filter((l) => l.fixed);
+      const beacons = exempt.filter((l) => l.behaviour === "blink");
+      const station = exempt.filter((l) => l.behaviour === "service");
+      expect(
+        beacons.length + station.length,
+        `${level.level} exempts something that is neither a beacon nor a signal`,
+      ).toBe(exempt.length);
+
       // Four faces per tower, at most six towers.
       expect(beacons.length % 4, `${level.level} has a partial beacon`).toBe(0);
       expect(beacons.length).toBeLessThanOrEqual(24);
@@ -108,6 +133,10 @@ describe("motion is the exception, not the rule", () => {
         expect(b.source).toBe("warning");
         expect(b.behaviour).toBe("blink");
       }
+
+      // And a station is a small, fixed set — the levels that have no transit
+      // have none of it at all.
+      expect(station.length, `${level.level}`).toBeLessThanOrEqual(6);
     }
   });
 
